@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     # Apply migrations on startup, serialized with an advisory lock.
     auto_migrate: bool = True
 
+    # Lets platform admins arm PayPal failure injection (lost capture responses, timeouts,
+    # declines) to demonstrate and test recovery. Sandbox only; keep off unless you need it.
+    ops_faults_enabled: bool = False
+
     # Bearer token for /api/metrics. Without one the endpoint is only served outside production.
     metrics_token: str | None = None
 
