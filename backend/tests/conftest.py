@@ -15,6 +15,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
 from app import clock, db
+from app.ai import provider as ai_provider
+from app.api.deps import limiter
 from app.config import override_settings, reset_settings_override
 from app.main import create_app
 from app.migrate import upgrade_head
@@ -30,7 +32,7 @@ def base_settings(**overrides) -> dict:
     """Settings every test starts from; individual tests may override fields."""
     values = dict(
         app_env="test", worker_enabled=False, auto_migrate=False, secret_key="test-secret-key",
-        public_app_url=APP_ORIGIN, log_json=False,
+        public_app_url=APP_ORIGIN, log_json=False, llm_provider="none", ai_bundle_rationale=True,
     )
     values.update(overrides)
     return values
@@ -74,15 +76,34 @@ def env(pg_admin_url: str, template_db: str, tmp_path) -> Iterator[str]:
         conn.execute(text(f'CREATE DATABASE "{name}" TEMPLATE "{template_db}"'))
     url = _db_url(pg_admin_url, name)
     override_settings(**base_settings(database_url=url, data_dir=tmp_path))
+    ai_provider.set_provider(None)
+    limiter.reset()
     clock.freeze(FROZEN_AT)
     db.configure(url)
     yield url
     clock.reset()
     db.engine().dispose()
+    ai_provider.clear_provider_override()
     reset_settings_override()
     with admin.connect() as conn:
         conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
     admin.dispose()
+
+
+@pytest.fixture
+def fixture_llm() -> ai_provider.FixtureProvider:
+    """A scripted model: queue replies per task, then the code under test calls it like the real one."""
+    fake = ai_provider.FixtureProvider()
+    ai_provider.set_provider(fake)
+    return fake
+
+
+@pytest.fixture
+def bakery() -> str:
+    """Juniper & Rye Bakehouse, live, with today's surplus listed. Returns the merchant id."""
+    from .fixtures import seed_bakery
+
+    return seed_bakery()
 
 
 @pytest.fixture
@@ -93,6 +114,7 @@ def app():
 def new_client(app) -> TestClient:
     client = TestClient(app, base_url="http://testserver")
     client.headers.update(ORIGIN)
+    client.get("/api/config")  # establishes the shopper session cookie
     return client
 
 

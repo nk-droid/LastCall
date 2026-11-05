@@ -9,13 +9,15 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 
 from app import clock
-from app.api.deps import optional_user
+from app.ai.provider import describe_provider
+from app.api.deps import optional_user, shopper_session
 from app.db import transaction
 from app.errors import Unprocessable
 from app.models import Merchant
-from app.services import pickup
+from app.services import analytics, pickup
 from app.services.accounts import SessionUser
 from app.services.catalog import address_line, catalog_items, get_merchant, item_view, list_merchants
 
@@ -122,3 +124,27 @@ def merchant_pickup_slots(slug: str, user: SessionUser | None = Depends(optional
         now = clock.now()
         pickup.ensure_slots(db, m, now)
         return {"slots": [pickup.slot_view(s, m, now) for s in pickup.list_slots(db, m, now)], "as_of": clock.iso(now)}
+
+
+@router.get("/config")
+def config(_: str = Depends(shopper_session)) -> dict[str, Any]:
+    """Public client configuration (also establishes the shopper session cookie)."""
+    ai = describe_provider()
+    return {"ai": {"enabled": ai["enabled"]}}
+
+
+class ClientEvent(BaseModel):
+    name: str = Field(max_length=40)
+    merchant: str = Field(min_length=1, max_length=80)
+    entity_type: str | None = Field(default=None, max_length=40)
+    entity_id: str | None = Field(default=None, max_length=64)
+
+
+@router.post("/events", status_code=202)
+def client_event(event: ClientEvent, session_id: str = Depends(shopper_session)) -> dict[str, str]:
+    if event.name not in analytics.CLIENT_EVENTS:
+        raise Unprocessable("Unknown event", code="unknown_event")
+    with transaction() as db:
+        m = get_merchant(db, _slug(event.merchant))
+        analytics.track(db, event.name, merchant_id=m.id, session_id=session_id, entity_type=event.entity_type, entity_id=event.entity_id)
+    return {"status": "recorded"}

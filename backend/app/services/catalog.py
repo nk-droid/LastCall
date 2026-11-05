@@ -1,6 +1,10 @@
 """CatalogService + InventoryService read side.
 
-available_to_sell = surplus_qty - held_units - merchant_buffer
+available_to_sell = surplus_qty - active_reservations - committed_unfulfilled - merchant_buffer
+
+Active reservations are HELD holds that have not expired plus PAYMENT_IN_FLIGHT holds
+(which never lapse on their own). Committed units are paid orders not yet handed off.
+All of it is derived from reservation rows, so there are no counters to drift.
 
 Only live shops are visible to shoppers; members can preview their own shop before it
 goes live. Unpriced or unstocked products are never sellable.
@@ -12,13 +16,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app import clock
 from app.domain import source_label
 from app.errors import NotFound
-from app.models import InventoryLot, Membership, Merchant, Price, Product
+from app.models import InventoryLot, Membership, Merchant, Price, Product, Reservation, ReservationLine
 
 
 def get_merchant(db: Session, slug: str, *, viewer_id: str | None = None) -> Merchant:
@@ -73,6 +77,13 @@ def current_prices(db: Session, product_ids: list[str], at: datetime) -> dict[st
     return {p.product_id: p for p in rows}
 
 
+def active_hold_condition(now: datetime):
+    return or_(
+        and_(Reservation.state == "HELD", Reservation.expires_at > now),
+        Reservation.state == "PAYMENT_IN_FLIGHT",
+    )
+
+
 @dataclass
 class Availability:
     surplus: int
@@ -106,8 +117,22 @@ def availability(
     if product_ids is not None:
         lot_query = lot_query.where(Product.id.in_(product_ids))
     lots = db.execute(lot_query).all()
-    reserved: dict[str, int] = {}
-    committed: dict[str, int] = {}
+
+    def sums(condition) -> dict[str, int]:
+        query = (
+            select(ReservationLine.product_id, func.coalesce(func.sum(ReservationLine.qty), 0))
+            .join(Reservation, Reservation.id == ReservationLine.reservation_id)
+            .where(Reservation.merchant_id == merchant_id, condition)
+            .group_by(ReservationLine.product_id)
+        )
+        if product_ids is not None:
+            query = query.where(ReservationLine.product_id.in_(product_ids))
+        if exclude_reservation_id:
+            query = query.where(Reservation.id != exclude_reservation_id)
+        return {pid: int(total) for pid, total in db.execute(query).all()}
+
+    reserved = sums(active_hold_condition(now))
+    committed = sums(Reservation.state == "COMMITTED")
     result: dict[str, Availability] = {}
     for lot, product_id in lots:
         result[product_id] = Availability(

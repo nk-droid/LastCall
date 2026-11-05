@@ -8,13 +8,17 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app import clock
-from app.api.deps import staff_role
+from app.api.deps import rate_limit, staff_role
 from app.db import transaction
-from app.services import alerts, audit, inventory, pickup
+from app.services import alerts, audit, copywriter, inventory, pickup
 from app.services.access import StaffContext
 from app.services.catalog import merchant_by_id
 
 router = APIRouter(prefix="/api/merchant", tags=["merchant"])
+
+
+class CopyRequest(BaseModel):
+    notes: str = Field(default="", max_length=300)
 
 
 class SlotUpdate(BaseModel):
@@ -55,6 +59,12 @@ def set_price(product_id: str, req: inventory.PriceInput, ctx: StaffContext = De
 @router.get("/products/{product_id}/history")
 def product_history(product_id: str, ctx: StaffContext = Depends(staff_role())) -> dict[str, Any]:
     return inventory.product_history(ctx, product_id)
+
+
+@router.post("/products/{product_id}/copy-draft", dependencies=[Depends(rate_limit("ai", 30))])
+def copy_draft(product_id: str, req: CopyRequest, ctx: StaffContext = Depends(staff_role("manager"))) -> dict[str, Any]:
+    """L4 draft. It is never published until a manager saves it on the product."""
+    return copywriter.draft_copy(ctx, product_id, req.notes)
 
 
 @router.post("/alerts/{alert_id}/resolve")

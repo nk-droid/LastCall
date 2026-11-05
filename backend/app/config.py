@@ -37,6 +37,17 @@ class Settings(BaseSettings):
     secret_key: str | None = None
     trust_proxy: bool = True
 
+    # LLM adapter. "ollama" calls Ollama through LangChain (ChatOllama): by default Ollama's cloud
+    # API, authenticated with OLLAMA_API_KEY. A local daemon works too (OLLAMA_HOST=http://localhost:11434,
+    # LLM_MODEL=gpt-oss:120b-cloud, no key). "none" disables AI and uses deterministic rules.
+    llm_provider: Literal["ollama", "none"] = "ollama"
+    ollama_host: str = "https://ollama.com"
+    ollama_api_key: str | None = None
+    llm_model: str = "gpt-oss:120b"
+    llm_think: Literal["low", "medium", "high"] = "low"
+    llm_timeout_seconds: float = 20.0
+    ai_bundle_rationale: bool = True
+
     # Background worker (runs inside the API process unless disabled).
     worker_enabled: bool = True
     worker_interval_seconds: float = 2.0

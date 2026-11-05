@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from collections import defaultdict, deque
@@ -13,12 +14,17 @@ from sqlalchemy import select
 from app.config import settings
 from app.db import transaction
 from app.errors import Forbidden, RateLimited, Unauthorized
+from app.ids import new_token
 from app.models import Membership, Merchant
 from app.services import accounts
 from app.services.access import StaffContext, require_role
 from app.services.accounts import SessionUser
 
 AUTH_COOKIE = "lc_auth"
+# Anonymous shopper session: owns baskets, holds and guest orders. Separate from sign-in, so
+# a guest can check out and a signed-in shopper's baskets survive signing out.
+SHOPPER_COOKIE = "lc_sid"
+_SID = re.compile(r"^[A-Za-z0-9_-]{24,64}$")
 
 
 def is_https(request: Request) -> bool:
@@ -45,6 +51,20 @@ def set_auth_cookie(request: Request, response: Response, token: str) -> None:
 
 def clear_auth_cookie(request: Request, response: Response) -> None:
     response.delete_cookie(AUTH_COOKIE, path="/", secure=is_https(request), httponly=True, samesite="lax")
+
+
+def shopper_session(request: Request, response: Response) -> str:
+    sid = request.cookies.get(SHOPPER_COOKIE)
+    if not sid or not _SID.match(sid):
+        sid = new_token(24)
+        response.set_cookie(SHOPPER_COOKIE, sid, max_age=60 * 60 * 24 * 30, httponly=True, samesite="lax", secure=is_https(request), path="/")
+    request.state.session_id = sid
+    return sid
+
+
+def optional_shopper_session(request: Request) -> str | None:
+    sid = request.cookies.get(SHOPPER_COOKIE)
+    return sid if sid and _SID.match(sid) else None
 
 
 def optional_user(request: Request) -> SessionUser | None:

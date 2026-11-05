@@ -5,4 +5,4 @@ The worker imports this before claiming jobs, so a handler exists for every kind
 
 from __future__ import annotations
 
-from app.services import inventory, jobs, pickup  # noqa: F401 - registers inventory.monitor, jobs.cleanup, pickup.ensure_slots
+from app.services import holds, inventory, jobs, pickup  # noqa: F401 - registers holds.sweep, inventory.monitor, jobs.cleanup, pickup.ensure_slots

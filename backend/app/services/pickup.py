@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -18,7 +18,7 @@ from app import clock
 from app.db import transaction
 from app.errors import Conflict, NotFound
 from app.ids import new_id
-from app.models import Merchant, PickupSlot
+from app.models import BundleQuote, Merchant, PickupSlot, Reservation
 from app.services import jobs
 from app.services.catalog import policy
 
@@ -28,6 +28,16 @@ WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 def window_for(merchant: Merchant, day: date) -> tuple[str, str] | None:
     window = ((merchant.pickup_config or {}).get("windows") or {}).get(WEEKDAYS[day.weekday()])
     return (window[0], window[1]) if window else None
+
+
+def reference_window(merchant: Merchant) -> tuple[str, str]:
+    """The pickup window shoppers most likely mean: today's, else the next open day's."""
+    today = clock.local_date(merchant.timezone)
+    for offset in range(7):
+        window = window_for(merchant, today + timedelta(days=offset))
+        if window:
+            return window
+    return ("16:00", "19:00")
 
 
 def _is_open_on(merchant: Merchant, day: date) -> bool:
@@ -222,8 +232,12 @@ def rebuild_open_slots(db: Session, merchant: Merchant) -> None:
 
 
 def slot_in_use(db: Session, slot: PickupSlot) -> bool:
-    """Whether anything references the slot (bookings now; quotes and holds once they exist)."""
-    return slot.booked_count > 0
+    """Whether a booking, hold or quote references the slot (those keep it; only unused slots are rebuilt)."""
+    if slot.booked_count > 0:
+        return True
+    holds = db.scalar(select(func.count()).select_from(Reservation).where(Reservation.pickup_slot_id == slot.id)) or 0
+    quotes = db.scalar(select(func.count()).select_from(BundleQuote).where(BundleQuote.pickup_slot_id == slot.id)) or 0
+    return holds > 0 or quotes > 0
 
 
 def update_slot(db: Session, merchant: Merchant, slot_id: str, capacity: int | None, status: str | None) -> PickupSlot:
