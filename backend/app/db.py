@@ -155,6 +155,11 @@ def read_session() -> Iterator[Session]:
         session.close()
 
 
+def libpq_dsn() -> str:
+    """The engine's database as a plain libpq connection string (for LISTEN connections)."""
+    return engine().url.render_as_string(hide_password=False).replace("postgresql+psycopg://", "postgresql://", 1)
+
+
 def ping() -> bool:
     with engine().connect() as conn:
         return conn.execute(text("SELECT 1")).scalar() == 1

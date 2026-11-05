@@ -15,12 +15,13 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app import db
-from app.api import auth, checkout, insights, inventory, merchant_orders, ops, orders, public, shopping, shops, system, team
+from app import db, realtime
+from app.api import auth, checkout, insights, inventory, live, merchant_orders, ops, orders, public, shopping, shops, system, team
 from app.config import settings
 from app.errors import AppError
 from app.migrate import upgrade_head
 from app.observability import correlation_id_var, metrics, setup_logging, trace_id_var
+from app.realtime import broker
 from app.services import overview
 from app.services.jobs import Worker
 
@@ -48,6 +49,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_logging(s.log_level, s.log_json)
     s.validate_for_startup()
     db.configure()
+    broker.configure(db.libpq_dsn())
     if s.auto_migrate:
         upgrade_head()
     worker = Worker(s.worker_interval_seconds) if s.worker_enabled else None
@@ -60,6 +62,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        broker.stop()
         if worker:
             worker.stop()
 
@@ -73,6 +76,7 @@ def _check_paypal() -> None:
 
 def create_app() -> FastAPI:
     s = settings()
+    realtime.install()
     app = FastAPI(
         title="LastCall API",
         version="1.0.0",
@@ -137,7 +141,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"error": {"code": "internal_error", "message": "Something went wrong on our side. Please try again.",
                                        "correlation_id": correlation_id_var.get()}}, status_code=500)
 
-    for module in (system, auth, team, shops, public, shopping, checkout, orders, inventory, merchant_orders, insights, ops):
+    for module in (system, auth, team, shops, public, shopping, checkout, orders, live, inventory, merchant_orders, insights, ops):
         app.include_router(module.router)
     return app
 
