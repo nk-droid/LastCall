@@ -8,9 +8,11 @@ from __future__ import annotations
 from app.services import (  # noqa: F401 - each module registers its handlers on import
     checkout,
     holds,
+    insights,
     inventory,
     jobs,
     orders,
+    overview,
     pickup,
     refunds,
     webhooks,

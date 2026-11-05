@@ -152,6 +152,21 @@ class MerchantAlert(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class MetricSnapshot(Base):
+    """The background aggregate of a shop's insights, one row per shop, period and day."""
+
+    __tablename__ = "metric_snapshots"
+    __table_args__ = (UniqueConstraint("merchant_id", "period", "period_start", name="uq_metric_snapshot_period"),)
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
+    period: Mapped[str] = mapped_column(String(16))
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class AnalyticsEvent(Base):
     __tablename__ = "analytics_events"
     __table_args__ = (Index("ix_analytics_merchant_name_time", "merchant_id", "event_name", "created_at"),)

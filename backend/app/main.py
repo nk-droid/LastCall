@@ -4,6 +4,7 @@ access logs), error envelopes, and startup (migrations, background worker)."""
 from __future__ import annotations
 
 import logging
+import threading
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -15,11 +16,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app import db
-from app.api import auth, checkout, inventory, merchant_orders, ops, orders, public, shopping, shops, system, team
+from app.api import auth, checkout, insights, inventory, merchant_orders, ops, orders, public, shopping, shops, system, team
 from app.config import settings
 from app.errors import AppError
 from app.migrate import upgrade_head
 from app.observability import correlation_id_var, metrics, setup_logging, trace_id_var
+from app.services import overview
 from app.services.jobs import Worker
 
 log = logging.getLogger("lastcall")
@@ -51,12 +53,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     worker = Worker(s.worker_interval_seconds) if s.worker_enabled else None
     if worker:
         worker.start()
-    log.info("LastCall API ready", extra={"env": s.app_env, "worker": bool(worker)})
+    threading.Thread(target=_check_paypal, daemon=True).start()
+    if not s.paypal_configured:
+        log.warning("PayPal credentials are not set (PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET); checkout is unavailable")
+    log.info("LastCall API ready", extra={"env": s.app_env, "worker": bool(worker), "paypal_configured": s.paypal_configured})
     try:
         yield
     finally:
         if worker:
             worker.stop()
+
+
+def _check_paypal() -> None:
+    try:
+        overview.check_paypal_connection()
+    except Exception:  # noqa: BLE001 - informational only
+        log.warning("PayPal connection check failed", exc_info=True)
 
 
 def create_app() -> FastAPI:
@@ -125,7 +137,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"error": {"code": "internal_error", "message": "Something went wrong on our side. Please try again.",
                                        "correlation_id": correlation_id_var.get()}}, status_code=500)
 
-    for module in (system, auth, team, shops, public, shopping, checkout, orders, inventory, merchant_orders, ops):
+    for module in (system, auth, team, shops, public, shopping, checkout, orders, inventory, merchant_orders, insights, ops):
         app.include_router(module.router)
     return app
 

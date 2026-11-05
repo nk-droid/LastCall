@@ -13,6 +13,7 @@ from app.models.catalog import (
     InventoryEvent,
     InventoryLot,
     MerchantAlert,
+    MetricSnapshot,
     PickupSlot,
     Price,
     Product,
@@ -26,5 +27,5 @@ from app.models.system import AuditEvent, Job, SystemState
 __all__ = [
     "MERCHANT_STATUSES", "PRODUCT_CATEGORIES", "SHOP_ROLES",
     "AIInvocation", "AnalyticsEvent", "AuditEvent", "BundleProposal", "BundleQuote", "CustomerIntent", "Base", "EmailMessage", "FaultInjection", "InventoryEvent", "InventoryLot", "Invite", "Job", "Membership", "Merchant",
-    "MerchantAlert", "Order", "PasswordReset", "PaymentAttempt", "PickupSlot", "Price", "Product", "Refund", "Reservation", "ReservationLine", "SubstitutionOffer", "SupportRequest", "SystemState", "User", "UserSession", "WebhookEvent",
+    "MerchantAlert", "MetricSnapshot", "Order", "PasswordReset", "PaymentAttempt", "PickupSlot", "Price", "Product", "Refund", "Reservation", "ReservationLine", "SubstitutionOffer", "SupportRequest", "SystemState", "User", "UserSession", "WebhookEvent",
 ]
