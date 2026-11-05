@@ -6,12 +6,22 @@ import from ``app.models``.
 
 from app.models.accounts import SHOP_ROLES, Invite, Membership, PasswordReset, User, UserSession
 from app.models.base import Base
+from app.models.catalog import (
+    PRODUCT_CATEGORIES,
+    AnalyticsEvent,
+    InventoryEvent,
+    InventoryLot,
+    MerchantAlert,
+    PickupSlot,
+    Price,
+    Product,
+)
 from app.models.merchants import MERCHANT_STATUSES, Merchant
 from app.models.notifications import EmailMessage
 from app.models.system import AuditEvent, Job, SystemState
 
 __all__ = [
-    "MERCHANT_STATUSES", "SHOP_ROLES",
-    "AuditEvent", "Base", "EmailMessage", "Invite", "Job", "Membership", "Merchant", "PasswordReset", "SystemState", "User",
-    "UserSession",
+    "MERCHANT_STATUSES", "PRODUCT_CATEGORIES", "SHOP_ROLES",
+    "AnalyticsEvent", "AuditEvent", "Base", "EmailMessage", "InventoryEvent", "InventoryLot", "Invite", "Job", "Membership", "Merchant",
+    "MerchantAlert", "PasswordReset", "PickupSlot", "Price", "Product", "SystemState", "User", "UserSession",
 ]
