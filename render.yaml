@@ -62,7 +62,7 @@ services:
     plan: 0.5c-512mb
     region: oregon
     rootDir: frontend
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci --include=dev && npm run build # NODE_ENV=production would skip TypeScript and the type packages
     startCommand: npm start
     healthCheckPath: /
     autoDeployTrigger: checksPass
