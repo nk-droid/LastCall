@@ -57,7 +57,7 @@ def address_line(merchant: Merchant) -> str:
 
 def merchant_ref(merchant: Merchant) -> dict[str, Any]:
     """The shop a quote or order belongs to, for headers, receipts and 'My orders'."""
-    return {"id": merchant.id, "slug": merchant.slug, "name": merchant.name, "category": merchant.category,
+    return {"id": merchant.id, "slug": merchant.slug, "name": merchant.name, "category": merchant.category, "timezone": merchant.timezone,
             "address": address_line(merchant), "phone": merchant.phone, "support_email": merchant.support_email}
 
 

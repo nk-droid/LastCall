@@ -168,7 +168,8 @@ def account_view(db: Session, user_id: str, active_merchant_id: str | None = Non
         .where(Membership.user_id == user_id).order_by(Merchant.name)
     ).all()
     memberships = [{"membership_id": m.id, "role": m.role,
-                    "shop": {"id": s.id, "slug": s.slug, "name": s.name, "category": s.category, "status": s.status}} for m, s in rows]
+                    "shop": {"id": s.id, "slug": s.slug, "name": s.name, "category": s.category, "status": s.status, "timezone": s.timezone}}
+                   for m, s in rows]
     initials = "".join(part[0] for part in user.display_name.split()[:2]).upper() or user.email[0].upper()
     return {
         "user": {"id": user.id, "email": user.email, "name": user.display_name, "phone": user.phone, "initials": initials,
