@@ -113,7 +113,7 @@ export function MerchantShell({ children }: { children: ReactNode }) {
       <ShopZone zone={staff?.merchant.timezone}>
       <AppBar position="sticky" sx={{ bgcolor: "rgba(255, 255, 255, 0.94)", backdropFilter: "saturate(1.2) blur(12px)", color: brand.forest }}>
         <Toolbar sx={{ gap: 1.5, minHeight: { xs: 60, sm: 64 }, px: { xs: 2, sm: 3 } }}>
-          <Link href="/merchant" underline="none" aria-label="Merchant console home" sx={{ borderRadius: "6px", py: 0.5 }}>
+          <Link href="/merchant" underline="none" aria-label="LastCall merchant console home" sx={{ borderRadius: "6px", py: 0.5 }}>
             <Wordmark />
           </Link>
           {account ? <ShopSwitcher account={account} onSwitched={(next) => { refresh(next); router.refresh(); }} /> : null}
