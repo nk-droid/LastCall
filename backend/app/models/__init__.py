@@ -19,11 +19,12 @@ from app.models.catalog import (
 )
 from app.models.merchants import MERCHANT_STATUSES, Merchant
 from app.models.notifications import EmailMessage
+from app.models.orders import FaultInjection, Order, PaymentAttempt, Refund, SupportRequest, WebhookEvent
 from app.models.shopping import BundleProposal, BundleQuote, CustomerIntent, Reservation, ReservationLine, SubstitutionOffer
 from app.models.system import AuditEvent, Job, SystemState
 
 __all__ = [
     "MERCHANT_STATUSES", "PRODUCT_CATEGORIES", "SHOP_ROLES",
-    "AIInvocation", "AnalyticsEvent", "AuditEvent", "BundleProposal", "BundleQuote", "CustomerIntent", "Base", "EmailMessage", "InventoryEvent", "InventoryLot", "Invite", "Job", "Membership", "Merchant",
-    "MerchantAlert", "PasswordReset", "PickupSlot", "Price", "Product", "Reservation", "ReservationLine", "SubstitutionOffer", "SystemState", "User", "UserSession",
+    "AIInvocation", "AnalyticsEvent", "AuditEvent", "BundleProposal", "BundleQuote", "CustomerIntent", "Base", "EmailMessage", "FaultInjection", "InventoryEvent", "InventoryLot", "Invite", "Job", "Membership", "Merchant",
+    "MerchantAlert", "Order", "PasswordReset", "PaymentAttempt", "PickupSlot", "Price", "Product", "Refund", "Reservation", "ReservationLine", "SubstitutionOffer", "SupportRequest", "SystemState", "User", "UserSession", "WebhookEvent",
 ]

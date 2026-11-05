@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app import clock
@@ -16,6 +17,7 @@ from app.ids import constant_time_equal
 from app.migrate import current_revision
 from app.models import SystemState
 from app.observability import metrics
+from app.services import webhooks
 
 router = APIRouter(prefix="/api", tags=["system"])
 
@@ -50,6 +52,9 @@ def health() -> JSONResponse:
         else:
             checks["worker"] = {"ok": False, "detail": "no heartbeat yet"}
             status = "degraded"
+    checks["paypal"] = {"configured": settings().paypal_configured, "webhooks": bool(settings().paypal_webhook_id)}
+    if not settings().paypal_configured:
+        status = "degraded"
     return JSONResponse({"status": status, "checks": checks, "time": clock.iso(clock.now())})
 
 
@@ -67,3 +72,11 @@ def prometheus(request: Request) -> str:
     elif settings().is_production:
         raise NotFound("Not found")
     return metrics.render()
+
+
+@router.post("/webhooks/paypal")
+async def paypal_webhook(request: Request) -> dict[str, Any]:
+    """Verify, de-duplicate and queue PayPal events. The raw body is kept byte-for-byte for verification."""
+    raw = (await request.body()).decode("utf-8")
+    headers = {k: v for k, v in request.headers.items()}
+    return await run_in_threadpool(webhooks.receive, headers, raw)

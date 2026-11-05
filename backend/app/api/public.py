@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from app import clock
 from app.ai.provider import describe_provider
 from app.api.deps import optional_user, shopper_session
+from app.config import settings
 from app.db import transaction
 from app.errors import Unprocessable
 from app.models import Merchant
@@ -129,8 +130,10 @@ def merchant_pickup_slots(slug: str, user: SessionUser | None = Depends(optional
 @router.get("/config")
 def config(_: str = Depends(shopper_session)) -> dict[str, Any]:
     """Public client configuration (also establishes the shopper session cookie)."""
-    ai = describe_provider()
-    return {"ai": {"enabled": ai["enabled"]}}
+    s = settings()
+    # The public client ID loads PayPal's buttons; null means checkout isn't available.
+    return {"ai": {"enabled": describe_provider()["enabled"]},
+            "paypal": {"client_id": s.paypal_client_id if s.paypal_configured else None, "currency": "USD"}}
 
 
 class ClientEvent(BaseModel):

@@ -10,8 +10,11 @@ from sqlalchemy import select
 from app import clock
 from app.db import transaction
 from app.models import Merchant, Product
+from app.payments import get_client
 from app.services import jobs
 from app.services.catalog import availability
+
+from .fake_paypal import FakePayPal
 
 SHOP = "juniper-rye"
 STRICT_NO_NUTS = {"exclusions": [{"code": "tree_nuts", "severity": "strict"}, {"code": "peanuts", "severity": "strict"}]}
@@ -82,3 +85,39 @@ def drain_jobs(rounds: int = 5) -> None:
     for _ in range(rounds):
         if jobs.run_due("test", include_periodic=False) == 0:
             break
+
+
+def policy_version(slug: str = SHOP) -> int:
+    with transaction() as db:
+        return db.scalar(select(Merchant.policy_version).where(Merchant.slug == slug))
+
+
+def start_checkout(client: TestClient, quote_id: str, merchant: str = SHOP, customer: dict[str, Any] | None = None) -> dict[str, Any]:
+    reserve(client, quote_id)
+    return ok(client.post("/api/checkout/paypal/order", json={
+        "quote_id": quote_id,
+        "customer": customer or {"name": "Maya Rivera", "email": "maya@example.com"},
+        "accept_policies": True,
+        "policy_version": policy_version(merchant),
+    }))
+
+
+def paypal_stand_in() -> FakePayPal:
+    return get_client().inner  # type: ignore[return-value]
+
+
+def approve(paypal_order_id: str) -> None:
+    """The buyer approves the payment in PayPal's window."""
+    paypal_stand_in().approve(paypal_order_id)
+
+
+def capture(client: TestClient, checkout: dict[str, Any]) -> dict[str, Any]:
+    return ok(client.post("/api/checkout/paypal/capture", json={"order_id": checkout["order_id"], "paypal_order_id": checkout["paypal_order_id"]}))
+
+
+def buy(client: TestClient, lines: list[tuple[str, int]], slot_index: int = 0, merchant: str = SHOP,
+        customer: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+    quote = quote_lines(client, lines, slot_index=slot_index, merchant=merchant)
+    checkout = start_checkout(client, quote["id"], merchant=merchant, customer=customer)
+    approve(checkout["paypal_order_id"])
+    return checkout, capture(client, checkout)

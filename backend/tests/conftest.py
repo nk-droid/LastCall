@@ -20,6 +20,9 @@ from app.api.deps import limiter
 from app.config import override_settings, reset_settings_override
 from app.main import create_app
 from app.migrate import upgrade_head
+from app.payments import override_client, reset_clients
+
+from .fake_paypal import FakePayPal
 
 TZ = ZoneInfo("America/Los_Angeles")
 # 3:00 PM local on a Tuesday.
@@ -33,6 +36,7 @@ def base_settings(**overrides) -> dict:
     values = dict(
         app_env="test", worker_enabled=False, auto_migrate=False, secret_key="test-secret-key",
         public_app_url=APP_ORIGIN, log_json=False, llm_provider="none", ai_bundle_rationale=True,
+        paypal_client_id="test-client-id", paypal_client_secret="test-client-secret", paypal_webhook_id="WH-TEST",
     )
     values.update(overrides)
     return values
@@ -77,6 +81,8 @@ def env(pg_admin_url: str, template_db: str, tmp_path) -> Iterator[str]:
     url = _db_url(pg_admin_url, name)
     override_settings(**base_settings(database_url=url, data_dir=tmp_path))
     ai_provider.set_provider(None)
+    reset_clients()
+    override_client(FakePayPal())
     limiter.reset()
     clock.freeze(FROZEN_AT)
     db.configure(url)
@@ -85,6 +91,7 @@ def env(pg_admin_url: str, template_db: str, tmp_path) -> Iterator[str]:
     db.engine().dispose()
     ai_provider.clear_provider_override()
     reset_settings_override()
+    reset_clients()
     with admin.connect() as conn:
         conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
     admin.dispose()
@@ -96,6 +103,14 @@ def fixture_llm() -> ai_provider.FixtureProvider:
     fake = ai_provider.FixtureProvider()
     ai_provider.set_provider(fake)
     return fake
+
+
+@pytest.fixture
+def paypal() -> FakePayPal:
+    """The PayPal stand-in for this test: play the buyer, inspect captures, deliver signed webhooks."""
+    from app.payments import get_client
+
+    return get_client().inner  # type: ignore[return-value]
 
 
 @pytest.fixture

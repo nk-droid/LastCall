@@ -7,8 +7,18 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 
-from app.api.deps import AUTH_COOKIE, clear_auth_cookie, current_user, optional_user, rate_limit, set_auth_cookie, user_agent
-from app.services import accounts, team
+from app.api.deps import (
+    AUTH_COOKIE,
+    SHOPPER_COOKIE,
+    clear_auth_cookie,
+    current_user,
+    optional_shopper_session,
+    optional_user,
+    rate_limit,
+    set_auth_cookie,
+    user_agent,
+)
+from app.services import accounts, orders, team
 from app.services.accounts import SessionUser
 
 router = APIRouter(prefix="/api", tags=["auth"])
@@ -54,16 +64,18 @@ class AcceptInviteBody(BaseModel):
 
 
 @router.post("/auth/signup", status_code=201, dependencies=[Depends(rate_limit("signup", 10, 3600))])
-def signup(body: SignupBody, request: Request, response: Response) -> dict[str, Any]:
+def signup(body: SignupBody, request: Request, response: Response, sid: str | None = Depends(optional_shopper_session)) -> dict[str, Any]:
     token, view = accounts.signup(email=body.email, name=body.name, password=body.password, user_agent=user_agent(request))
     set_auth_cookie(request, response, token)
+    orders.claim_guest_orders(view["user"]["id"], sid)
     return view
 
 
 @router.post("/auth/login", dependencies=[Depends(rate_limit("login", 20, 300))])
-def login(body: LoginBody, request: Request, response: Response) -> dict[str, Any]:
+def login(body: LoginBody, request: Request, response: Response, sid: str | None = Depends(optional_shopper_session)) -> dict[str, Any]:
     token, view = accounts.login(email=body.email, password=body.password, user_agent=user_agent(request))
     set_auth_cookie(request, response, token)
+    orders.claim_guest_orders(view["user"]["id"], sid)
     return view
 
 
@@ -71,6 +83,8 @@ def login(body: LoginBody, request: Request, response: Response) -> dict[str, An
 def logout(request: Request, response: Response) -> dict[str, bool]:
     accounts.revoke_session(request.cookies.get(AUTH_COOKIE))
     clear_auth_cookie(request, response)
+    # Start a fresh shopper session too, so the next person on this browser sees none of these baskets or orders.
+    response.delete_cookie(SHOPPER_COOKIE, path="/")
     return {"ok": True}
 
 

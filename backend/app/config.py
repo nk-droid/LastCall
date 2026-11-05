@@ -37,6 +37,15 @@ class Settings(BaseSettings):
     secret_key: str | None = None
     trust_proxy: bool = True
 
+    # PayPal (the only payment provider). The API host is fixed to the Sandbox in this build, so
+    # test credentials can never move real money. Checkout is unavailable until the app's client
+    # ID and secret are set; the webhook ID enables signature verification of PayPal events.
+    paypal_client_id: str | None = None
+    paypal_client_secret: str | None = None
+    paypal_webhook_id: str | None = None
+    paypal_timeout_seconds: float = 20.0
+    paypal_brand_name: str = "LastCall"
+
     # LLM adapter. "ollama" calls Ollama through LangChain (ChatOllama): by default Ollama's cloud
     # API, authenticated with OLLAMA_API_KEY. A local daemon works too (OLLAMA_HOST=http://localhost:11434,
     # LLM_MODEL=gpt-oss:120b-cloud, no key). "none" disables AI and uses deterministic rules.
@@ -59,6 +68,10 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
     log_json: bool = True
+
+    @property
+    def paypal_configured(self) -> bool:
+        return bool(self.paypal_client_id and self.paypal_client_secret)
 
     @property
     def is_production(self) -> bool:

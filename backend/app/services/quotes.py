@@ -19,7 +19,7 @@ from app.db import transaction
 from app.domain import Intent, check_dietary
 from app.errors import Conflict, NotFound, QuoteInvalid, Unprocessable
 from app.ids import new_id
-from app.models import BundleProposal, BundleQuote, CustomerIntent, Merchant, PickupSlot, Reservation
+from app.models import BundleProposal, BundleQuote, CustomerIntent, Merchant, Order, PickupSlot, Reservation
 from app.money import format_money
 from app.services import analytics, audit, pickup
 from app.services import reservations as rsv
@@ -214,6 +214,7 @@ def view(db: Session, quote: BundleQuote, merchant: Merchant, now: datetime, *, 
     from app.services import substitution  # noqa: PLC0415 - substitution imports this module
 
     res = db.scalar(select(Reservation).where(Reservation.quote_id == quote.id))
+    order = db.scalar(select(Order).where(Order.quote_id == quote.id))
     intent = rsv.quote_intent(quote)
     pending_offer = substitution.pending_offer_view(db, quote, merchant) if include_offer else None
     latest = None
@@ -247,7 +248,7 @@ def view(db: Session, quote: BundleQuote, merchant: Merchant, now: datetime, *, 
         "inventory_snapshot": (quote.eligibility_snapshot or {}).get("inventory", {}),
         "validity": None if problems is None else {"valid": not problems, "problems": [p.to_dict() for p in problems], "checked_at": clock.iso(now)},
         "reservation": rsv.view(res, now),
-        "order": None,
+        "order": {"id": order.id, "number": order.order_number, "payment_status": order.payment_status} if order else None,
         "pending_offer": pending_offer,
         "latest_quote_id": latest,
         "policy_version": merchant.policy_version,
