@@ -36,14 +36,13 @@ def _claims(assertion: str) -> dict:
 
 def test_auth_assertion_names_our_app_and_the_payee():
     assert _claims(auth_assertion("client-123", {"merchant_id": SHOP_PAYEE})) == {"iss": "client-123", "payer_id": SHOP_PAYEE}
-    assert _claims(auth_assertion("client-123", {"email": "shop@example.com"})) == {"iss": "client-123", "email": "shop@example.com"}
     assert auth_assertion("client-123", None) is None
 
 
 def test_owner_connects_a_verified_payout_account(app, paypal):
     owner = _owner(app)
     view = _connect(owner, "juniperrye001")
-    assert view["payouts"] == {"status": "connected", "kind": "merchant_id", "display": "JUN…001", "verified_at": view["payouts"]["verified_at"]}
+    assert view["payouts"] == {"status": "connected", "display": "JUN…001", "verified_at": view["payouts"]["verified_at"]}
     assert next(i for i in view["checklist"] if i["key"] == "payouts")["done"] is True
     check = next(o for o in paypal.orders.values() if o["purchase_units"][0]["reference_id"] == "payout-check")
     assert check["purchase_units"][0]["payee"] == {"merchant_id": SHOP_PAYEE} and check["status"] == "CREATED"  # never approved or captured
@@ -56,6 +55,8 @@ def test_rejected_and_malformed_payees_are_not_saved(app, paypal):
     assert rejected.status_code == 422 and rejected.json()["error"]["code"] == "payee_invalid"
     assert owner.put("/api/merchant/shop/payouts", json={"merchant_id": "short"}).status_code == 422
     assert owner.put("/api/merchant/shop/payouts", json={}).status_code == 422
+    # Emails can't be verified with PayPal before money moves, so they aren't accepted.
+    assert owner.put("/api/merchant/shop/payouts", json={"email": "shop@example.com"}).status_code == 422
     assert ok(owner.get("/api/merchant/shop"))["payouts"] == {"status": "not_connected"}
 
 

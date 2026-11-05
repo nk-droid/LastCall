@@ -1,16 +1,18 @@
 """A shop's PayPal payout account: where its customers' payments go.
 
 The owner enters the PayPal business account's merchant ID (Account settings -> Business
-information) or its email. Before saving, LastCall creates a small test order with that payee:
-PayPal rejects unknown or unusable payees up front, and an order nobody approves simply expires,
-so no money moves. Only a verified ("connected") account is used at checkout.
+information). Before saving, LastCall creates a small test order with that payee: PayPal rejects
+unknown or unusable merchant IDs up front (PAYEE_ACCOUNT_INVALID), and an order nobody approves
+simply expires, so no money moves. Emails aren't accepted: PayPal takes any email as a payee at
+order creation, so an email can't be verified and a typo would send money to an unclaimed account.
+Only a verified ("connected") account is used at checkout.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app import clock
 from app.db import transaction
@@ -26,18 +28,15 @@ from app.services.shops import shop_view
 
 
 class PayoutAccount(BaseModel):
-    merchant_id: str | None = Field(default=None, max_length=13)
-    email: EmailStr | None = None
+    merchant_id: str = Field(min_length=1, max_length=20)
 
-    @model_validator(mode="after")
-    def _one(self) -> PayoutAccount:
-        if self.merchant_id:
-            self.merchant_id = self.merchant_id.strip().upper()
-            if not MERCHANT_ID.match(self.merchant_id):
-                raise ValueError("A PayPal merchant ID is 13 letters and digits")
-        if not self.merchant_id and not self.email:
-            raise ValueError("Enter your PayPal merchant ID or the email of your PayPal business account")
-        return self
+    @field_validator("merchant_id")
+    @classmethod
+    def _format(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not MERCHANT_ID.match(value):
+            raise ValueError("A PayPal merchant ID is 13 letters and digits (PayPal: Account settings -> Business information)")
+        return value
 
 
 def _verify(payee: dict[str, str]) -> None:
@@ -59,13 +58,13 @@ def _verify(payee: dict[str, str]) -> None:
 
 def connect(ctx: StaffContext, account: PayoutAccount) -> dict[str, Any]:
     require_role(ctx, "owner")
-    payee = {"merchant_id": account.merchant_id} if account.merchant_id else {"email": str(account.email)}
+    payee = {"merchant_id": account.merchant_id}
     _verify(payee)  # outside the transaction: never hold row locks across a network call
     with transaction() as db:
         merchant = db.get(Merchant, ctx.merchant_id, with_for_update=True)
         merchant.paypal = {**payee, "status": "connected", "verified_at": clock.iso(clock.now()), "connected_by": ctx.display_name}
         audit.record(db, actor=ctx.actor, actor_role=ctx.role, entity_type="merchant", entity_id=merchant.id, action="payout_account_connected",
-                     meta={"kind": next(iter(payee))})
+                     meta={"merchant_id": account.merchant_id})
         return shop_view(db, merchant, ctx.role)
 
 

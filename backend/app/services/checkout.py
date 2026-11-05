@@ -132,7 +132,7 @@ def payout_payee(merchant: Merchant) -> dict[str, Any] | None:
     paypal = merchant.paypal or {}
     if paypal.get("status") != "connected":
         return None
-    return {k: paypal[k] for k in ("merchant_id", "email") if paypal.get(k)} or None
+    return {"merchant_id": paypal["merchant_id"]} if paypal.get("merchant_id") else None
 
 
 def _order_access(db: Session, order_id: str, session_id: str | None, access_token: str | None, lock: bool = False,

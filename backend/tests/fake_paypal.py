@@ -115,7 +115,7 @@ class FakePayPal:
         if any(i["unit_amount"]["currency_code"] != amount.get("currency_code") for i in items):
             raise PayPalError(422, "UNPROCESSABLE_ENTITY", "Currency mismatch", issue="CURRENCY_MISMATCH")
         payee = units[0].get("payee") or {}
-        if payee and (payee.get("merchant_id") in self.invalid_payees or payee.get("email_address") in self.invalid_payees):
+        if payee and payee.get("merchant_id") in self.invalid_payees:
             raise PayPalError(422, "UNPROCESSABLE_ENTITY", "Payee account is invalid", issue="PAYEE_ACCOUNT_INVALID")
 
     def get_order(self, order_id: str) -> dict[str, Any]:
@@ -166,7 +166,7 @@ class FakePayPal:
         if not assertion:
             return False
         claims = json.loads(base64.urlsafe_b64decode(assertion.split(".")[1] + "==="))
-        return claims.get("payer_id") == payee.get("merchant_id") if payee.get("merchant_id") else claims.get("email") == payee.get("email_address")
+        return claims.get("payer_id") == payee.get("merchant_id")
 
     def get_capture(self, capture_id: str, auth_assertion: str | None = None) -> dict[str, Any]:
         with self._lock:
