@@ -45,6 +45,7 @@ DEFAULT_POLICIES: dict[str, Any] = {
     "data_retention_days": 30,
     "no_show_policy": "hold_for_review",
     "no_show_grace_minutes": 30,
+    "relist_at_local": "06:00",
     "tax_rates_bps": {"bakery": 0},
     "fees_minor": 0,
     "cancellation_policy_text": "You can request a cancellation up to 60 minutes before your pickup window starts. The shop reviews each request; approved cancellations are refunded in full to your PayPal payment method.",
@@ -329,6 +330,11 @@ def update_policies(ctx: StaffContext, patch: dict[str, Any]) -> dict[str, Any]:
                 raise _field_error("no_show_policy", "Unknown no-show policy")
             policies["no_show_policy"] = patch["no_show_policy"]
             customer_facing = True
+        if "relist_at_local" in patch:
+            value = str(patch["relist_at_local"])
+            if not _HHMM.match(value):
+                raise _field_error("relist_at_local", "Use HH:MM")
+            policies["relist_at_local"] = value
         if "cancellation_cutoff_minutes" in patch:
             customer_facing = True
         merchant.policies = policies

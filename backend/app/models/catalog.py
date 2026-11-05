@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -49,6 +50,10 @@ class Product(Base):
     status: Mapped[str] = mapped_column(String(20), default="active")
     per_order_limit: Mapped[int] = mapped_column(Integer, default=6)
     surplus_priority: Mapped[int] = mapped_column(Integer, default=1)
+    # Daily listing template: re-list this quantity every day at the shop's listing time.
+    relist_daily: Mapped[bool] = mapped_column(Boolean, default=False)
+    relist_qty: Mapped[int] = mapped_column(Integer, default=0)
+    relist_cutoff_local: Mapped[str | None] = mapped_column(String(5), nullable=True)
     created_at: Mapped[datetime] = created_col()
     updated_at: Mapped[datetime] = updated_col()
 

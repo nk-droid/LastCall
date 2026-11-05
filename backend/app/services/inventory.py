@@ -84,6 +84,7 @@ def inventory_rows(db: Session, merchant: Merchant, now: datetime) -> list[dict[
             "description_source": p.description_source,
             "per_order_limit": p.per_order_limit,
             "surplus_priority": p.surplus_priority,
+            "relist": {"enabled": p.relist_daily, "qty": p.relist_qty, "cutoff_local": p.relist_cutoff_local},
         })
     return rows
 
@@ -198,6 +199,12 @@ class AllergenInput(BaseModel):
         return sorted(set(value))
 
 
+class RelistInput(BaseModel):
+    enabled: bool = False
+    qty: int = Field(default=0, ge=0, le=500)
+    cutoff_local: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+
+
 class ProductInput(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     description: str = Field(default="", max_length=600)
@@ -212,6 +219,7 @@ class ProductInput(BaseModel):
     per_order_limit: int = Field(ge=1, le=24)
     surplus_priority: int = Field(ge=0, le=3)
     image_url: str | None = Field(default=None, max_length=500)
+    relist: RelistInput | None = None
 
     @field_validator("image_url")
     @classmethod
@@ -248,6 +256,10 @@ def _apply_product(product: Product, data: ProductInput, user: StaffContext) -> 
     product.allergen_source = {"verified": "merchant_verified", "needs_review": "merchant_unverified", "missing": "missing"}[allergens["status"]]
     product.per_order_limit = data.per_order_limit
     product.surplus_priority = data.surplus_priority
+    if data.relist is not None:
+        product.relist_daily = data.relist.enabled
+        product.relist_qty = data.relist.qty
+        product.relist_cutoff_local = data.relist.cutoff_local
 
 
 def update_product(user: StaffContext, product_id: str, data: ProductInput) -> dict[str, Any]:

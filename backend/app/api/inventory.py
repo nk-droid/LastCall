@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app import clock
 from app.api.deps import rate_limit, staff_role
 from app.db import transaction
-from app.services import alerts, audit, copywriter, inventory, media, pickup
+from app.services import alerts, audit, copywriter, inventory, listings, media, pickup
 from app.services.access import StaffContext
 from app.services.catalog import merchant_by_id
 
@@ -76,6 +76,12 @@ async def upload_photo(file: UploadFile, ctx: StaffContext = Depends(staff_role(
         audit.record(db, actor=ctx.actor, actor_role=ctx.role, entity_type="asset", entity_id=asset.id, action="photo_uploaded",
                      meta={"bytes": asset.size_bytes, "width": asset.width, "height": asset.height})
         return {"id": asset.id, "url": media.url(asset.id), "width": asset.width, "height": asset.height}
+
+
+@router.post("/listings/publish")
+def publish_listing(ctx: StaffContext = Depends(staff_role("manager"))) -> dict[str, Any]:
+    """Re-list every 'repeat daily' product now with its template quantity."""
+    return listings.relist_now(ctx)
 
 
 @router.post("/alerts/{alert_id}/resolve")
