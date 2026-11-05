@@ -216,8 +216,8 @@ class ProductInput(BaseModel):
     @field_validator("image_url")
     @classmethod
     def _image(cls, value: str | None) -> str | None:
-        if value and not (value.startswith("/api/assets/") or value.startswith("https://")):
-            raise ValueError("Use an uploaded photo or an https:// image URL")
+        if value and not value.startswith("/api/assets/"):
+            raise ValueError("Upload a photo for this product")
         return value or None
 
 

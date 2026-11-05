@@ -18,6 +18,7 @@ from app.models.catalog import (
     Price,
     Product,
 )
+from app.models.media import Asset
 from app.models.merchants import MERCHANT_STATUSES, Merchant
 from app.models.notifications import EmailMessage
 from app.models.orders import FaultInjection, Order, PaymentAttempt, Refund, SupportRequest, WebhookEvent
@@ -26,6 +27,6 @@ from app.models.system import AuditEvent, Job, SystemState
 
 __all__ = [
     "MERCHANT_STATUSES", "PRODUCT_CATEGORIES", "SHOP_ROLES",
-    "AIInvocation", "AnalyticsEvent", "AuditEvent", "BundleProposal", "BundleQuote", "CustomerIntent", "Base", "EmailMessage", "FaultInjection", "InventoryEvent", "InventoryLot", "Invite", "Job", "Membership", "Merchant",
+    "AIInvocation", "AnalyticsEvent", "Asset", "AuditEvent", "BundleProposal", "BundleQuote", "CustomerIntent", "Base", "EmailMessage", "FaultInjection", "InventoryEvent", "InventoryLot", "Invite", "Job", "Membership", "Merchant",
     "MerchantAlert", "MetricSnapshot", "Order", "PasswordReset", "PaymentAttempt", "PickupSlot", "Price", "Product", "Refund", "Reservation", "ReservationLine", "SubstitutionOffer", "SupportRequest", "SystemState", "User", "UserSession", "WebhookEvent",
 ]

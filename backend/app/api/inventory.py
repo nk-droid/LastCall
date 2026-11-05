@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, UploadFile
 from pydantic import BaseModel, Field
 
 from app import clock
 from app.api.deps import rate_limit, staff_role
 from app.db import transaction
-from app.services import alerts, audit, copywriter, inventory, pickup
+from app.services import alerts, audit, copywriter, inventory, media, pickup
 from app.services.access import StaffContext
 from app.services.catalog import merchant_by_id
 
@@ -65,6 +65,17 @@ def product_history(product_id: str, ctx: StaffContext = Depends(staff_role())) 
 def copy_draft(product_id: str, req: CopyRequest, ctx: StaffContext = Depends(staff_role("manager"))) -> dict[str, Any]:
     """L4 draft. It is never published until a manager saves it on the product."""
     return copywriter.draft_copy(ctx, product_id, req.notes)
+
+
+@router.post("/assets", status_code=201, dependencies=[Depends(rate_limit("upload", 30, 600))])
+async def upload_photo(file: UploadFile, ctx: StaffContext = Depends(staff_role("manager"))) -> dict[str, Any]:
+    """Upload a product photo; attach it to a product by saving the returned URL as its image."""
+    raw = await file.read(media.MAX_UPLOAD_BYTES + 1)
+    with transaction() as db:
+        asset = media.store(db, raw, filename=file.filename or "photo", merchant_id=ctx.merchant_id, actor=ctx.actor)
+        audit.record(db, actor=ctx.actor, actor_role=ctx.role, entity_type="asset", entity_id=asset.id, action="photo_uploaded",
+                     meta={"bytes": asset.size_bytes, "width": asset.width, "height": asset.height})
+        return {"id": asset.id, "url": media.url(asset.id), "width": asset.width, "height": asset.height}
 
 
 @router.post("/alerts/{alert_id}/resolve")

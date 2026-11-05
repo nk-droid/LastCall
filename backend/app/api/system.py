@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, PlainTextResponse
 
@@ -17,7 +17,7 @@ from app.ids import constant_time_equal
 from app.migrate import current_revision
 from app.models import SystemState
 from app.observability import metrics
-from app.services import webhooks
+from app.services import media, webhooks
 
 router = APIRouter(prefix="/api", tags=["system"])
 
@@ -80,3 +80,14 @@ async def paypal_webhook(request: Request) -> dict[str, Any]:
     raw = (await request.body()).decode("utf-8")
     headers = {k: v for k, v in request.headers.items()}
     return await run_in_threadpool(webhooks.receive, headers, raw)
+
+
+@router.get("/assets/{asset_id}")
+def asset(asset_id: str, request: Request, size: str = Query(default="full", pattern="^(full|thumb)$")) -> Response:
+    """Stored photos. Assets are immutable, so they're cached for a year and revalidated by ETag."""
+    with transaction() as db:
+        data, content_type, etag = media.load(db, asset_id, size)
+    headers = {"ETag": etag, "Cache-Control": "public, max-age=31536000, immutable"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(content=data, media_type=content_type, headers=headers)
