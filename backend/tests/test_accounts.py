@@ -201,3 +201,11 @@ def test_platform_admin_cli_helper(app):
     c.headers.update(ORIGIN)
     me = c.post("/api/auth/login", json={"email": "ops@example.com", "password": "admin-password-1"}).json()
     assert me["user"]["is_platform_admin"] is True
+
+
+def test_session_cookie_is_secure_behind_chained_proxies(client):
+    """Render's edge and the Next.js proxy both add X-Forwarded-Proto; the browser's scheme comes first."""
+    response = client.post("/api/auth/signup", json={"name": "Ana", "email": "ana@example.com", "password": PASSWORD},
+                           headers={"X-Forwarded-Proto": "https,http"})
+    cookie = response.headers["set-cookie"]
+    assert "lc_auth=" in cookie and "Secure" in cookie and "HttpOnly" in cookie

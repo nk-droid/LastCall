@@ -28,7 +28,10 @@ _SID = re.compile(r"^[A-Za-z0-9_-]{24,64}$")
 
 
 def is_https(request: Request) -> bool:
-    proto = request.headers.get("x-forwarded-proto") if settings().trust_proxy else None
+    # Behind several proxies (Render's edge, then Next.js) the header is a list: "https,http".
+    # The first entry is what the browser used.
+    forwarded = request.headers.get("x-forwarded-proto") if settings().trust_proxy else None
+    proto = forwarded.split(",")[0].strip().lower() if forwarded else None
     return (proto or request.url.scheme) == "https"
 
 
