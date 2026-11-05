@@ -53,6 +53,19 @@ def render(template: str, ctx: dict[str, Any], link: str | None) -> Rendered:
         lines = [f"{ctx['inviter']} invited you to join {ctx['shop']} on LastCall as {ctx['role_label']}.",
                  "Accept the invitation to manage surplus, orders and pickups from the merchant console. The link expires in 7 days."]
         return Rendered(f"Join {ctx['shop']} on LastCall", "\n\n".join([*lines, link or ""]), _html(lines, ("Accept invitation", link or "")))
+    if template == "shop_submitted":
+        lines = [f"{ctx['owner']} submitted {ctx['shop']} for review.", "Check the profile, pickup address, policies and allergen records, then approve it or send it back with a note."]
+        return Rendered(f"Review request: {ctx['shop']}", "\n\n".join([*lines, link or ""]), _html(lines, ("Open review", link or "")))
+    if template == "shop_approved":
+        lines = [f"Good news: {ctx['shop']} is live on LastCall.", "Shoppers can now find your shop, build bundles from today's surplus and pay with PayPal."]
+        return Rendered(f"{ctx['shop']} is live on LastCall", "\n\n".join([*lines, link or ""]), _html(lines, ("Open your console", link or "")))
+    if template == "shop_rejected":
+        lines = [f"{ctx['shop']} needs a few changes before it can go live.", f"Reviewer note: {ctx['note']}", "Update your shop and submit it again."]
+        return Rendered(f"Changes needed for {ctx['shop']}", "\n\n".join([*lines, link or ""]), _html(lines, ("Update your shop", link or "")))
+    if template == "shop_suspended":
+        lines = [f"{ctx['shop']} has been paused on LastCall and isn't taking new orders.", f"Reason: {ctx['note']}",
+                 "Existing orders stay in your console. Reply to this email to resolve it."]
+        return Rendered(f"{ctx['shop']} is paused", "\n\n".join([*lines, link or ""]), _html(lines, ("Open your console", link or "")))
     raise ValueError(f"unknown email template {template}")
 
 

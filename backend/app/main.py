@@ -15,7 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app import db
-from app.api import auth, system, team
+from app.api import auth, ops, shops, system, team
 from app.config import settings
 from app.errors import AppError
 from app.migrate import upgrade_head
@@ -125,7 +125,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"error": {"code": "internal_error", "message": "Something went wrong on our side. Please try again.",
                                        "correlation_id": correlation_id_var.get()}}, status_code=500)
 
-    for module in (system, auth, team):
+    for module in (system, auth, team, shops, ops):
         app.include_router(module.router)
     return app
 
