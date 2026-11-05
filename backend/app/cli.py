@@ -1,14 +1,16 @@
-"""Operational commands: python -m app.cli {migrate|run-due|worker}."""
+"""Operational commands: python -m app.cli {migrate|create-admin|run-due|worker}."""
 
 from __future__ import annotations
 
 import argparse
+import getpass
+import os
 
 from app import db
 from app.config import settings
 from app.migrate import upgrade_head
 from app.observability import setup_logging
-from app.services import jobs
+from app.services import accounts, jobs
 from app.worker import run_forever
 
 
@@ -16,6 +18,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("migrate", help="Apply database migrations")
+    admin = sub.add_parser("create-admin", help="Create or promote a platform administrator")
+    admin.add_argument("--email", required=True)
+    admin.add_argument("--name", default="LastCall Admin")
     sub.add_parser("run-due", help="Run due background jobs once")
     sub.add_parser("worker", help="Run the background worker in the foreground")
     args = parser.parse_args()
@@ -27,6 +32,10 @@ def main() -> None:
     upgrade_head()
     if args.command == "migrate":
         print("migrations applied")
+    elif args.command == "create-admin":
+        password = os.environ.get("ADMIN_PASSWORD") or getpass.getpass("Password for the admin account: ")
+        result = accounts.ensure_platform_admin(email=args.email, name=args.name, password=password)
+        print(f"platform admin ready: {result['email']}")
     elif args.command == "run-due":
         print(f"ran {jobs.run_due('cli')} job(s)")
     elif args.command == "worker":
