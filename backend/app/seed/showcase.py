@@ -70,7 +70,7 @@ SHOWCASE: list[dict[str, Any]] = [
     dict(slug="night-owl", name="Night Owl Doughnuts", category="Doughnut shop", tagline="Open 24 hours. Fresh rings around the clock",
          description="A 24-hour doughnut counter. Whatever's left from each fry goes up for pickup, day or night.",
          address={"line1": "2290 Mission Street", "city": "Mission Flats", "region": "CA", "postal_code": "94110", "country": "US"},
-         phone="(415) 555-0126", hours=_week(("00:00", "23:59")), pickup=_week(("00:00", "23:59")), capacity=10, relist_at="00:05",
+         phone="(415) 555-0126", hours=_week(("00:00", "23:59")), pickup=_week(("00:00", "23:59")), capacity=6, slot_minutes=15, relist_at="00:05",
          policies={"cancellation_cutoff_minutes": 15, "no_show_grace_minutes": 60, "min_lead_minutes": 10,
                    "cross_contact_text": "Every doughnut is fried in shared oil with our peanut butter doughnuts, and toppings include tree nuts. Cross-contact can't be ruled out.",
                    "pickup_instructions": "Show your pickup code at the register; your box waits on the LastCall shelf."},
@@ -95,7 +95,8 @@ def _create_shop(db: Session, spec: dict[str, Any], now) -> Merchant:
     merchant = Merchant(
         id=new_id("mer"), slug=spec["slug"], name=spec["name"], category=spec["category"], tagline=spec["tagline"], description=spec["description"],
         address=spec["address"], phone=spec["phone"], support_email=f"hello.{spec['slug'].replace('-', '')}@example.com", timezone=tz,
-        currency="USD", hours=spec["hours"], pickup_config={"windows": spec["pickup"], "slot_minutes": 30, "capacity": spec["capacity"]},
+        currency="USD", hours=spec["hours"],
+        pickup_config={"windows": spec["pickup"], "slot_minutes": spec.get("slot_minutes", 30), "capacity": spec["capacity"]},
         policies=policies, paypal=_payee(spec["slug"]), status="live", is_showcase=True, submitted_at=now, approved_at=now,
         verification={"verified_by": "LastCall", "verified_at": clock.local_date(tz).isoformat(), "checks": shops.APPROVAL_CHECKS,
                       "policies_confirmed_at": clock.iso(now), "policies_confirmed_by": spec["staff"][0][1]},
