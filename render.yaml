@@ -1,0 +1,77 @@
+# Render Blueprint: the LastCall web app, API and database.
+#
+# Browser -> lastcall-web (Next.js) -> private network -> lastcall-api (FastAPI) -> lastcall-db
+# PayPal webhooks go straight to the API's public URL: https://<lastcall-api>.onrender.com/api/webhooks/paypal
+#
+# Values marked `sync: false` are asked for once, when the Blueprint is first created.
+# After the first deploy, seed the showcase shops and an admin from the API's Shell:
+#   .venv/bin/python -m app.cli seed-showcase --pexels   (SHOWCASE_PASSWORD, PEXELS_API_KEY in env)
+#   .venv/bin/python -m app.cli create-admin --email you@example.com
+
+databases:
+  - name: lastcall-db
+    plan: 0.1c-256mb
+    region: oregon
+    postgresMajorVersion: "16"
+    databaseName: lastcall
+    user: lastcall
+
+services:
+  - type: web
+    name: lastcall-api
+    runtime: python
+    plan: 0.5c-512mb
+    region: oregon
+    rootDir: backend
+    buildCommand: uv sync --frozen --no-dev
+    preDeployCommand: .venv/bin/python -m app.cli migrate
+    startCommand: .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'
+    healthCheckPath: /api/health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lastcall-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: METRICS_TOKEN
+        generateValue: true
+      - key: AUTO_MIGRATE
+        value: "false"
+      - key: LOG_JSON
+        value: "true"
+      - key: OPS_FAULTS_ENABLED
+        value: "true"
+      - key: PUBLIC_APP_URL # https://<lastcall-web>.onrender.com (or your custom domain)
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: OLLAMA_API_KEY
+        sync: false
+
+  - type: web
+    name: lastcall-web
+    runtime: node
+    plan: 0.5c-512mb
+    region: oregon
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # host:port of the API on Render's private network; Next.js proxies /api/* there.
+      - key: LASTCALL_API_HOSTPORT
+        fromService:
+          type: web
+          name: lastcall-api
+          property: hostport

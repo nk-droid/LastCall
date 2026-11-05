@@ -1,0 +1,50 @@
+[project]
+name = "lastcall-backend"
+version = "1.0.0"
+description = "LastCall API: surplus bundles for local food shops with AI-assisted planning and PayPal checkout."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.162",
+    "uvicorn[standard]>=0.54",
+    "sqlalchemy>=2.1",
+    "alembic>=1.20",
+    "psycopg[binary]>=3.2",
+    "pydantic[email]>=2.14",
+    "pydantic-settings>=2.16",
+    "httpx>=0.28",
+    "argon2-cffi>=25.1",
+    "langchain-ollama>=1.1.0",
+    "qrcode>=8.2",
+    "pillow>=11.0",
+    "python-multipart>=0.0.20",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2",
+    "ruff>=0.8",
+    # Embedded PostgreSQL for local development and tests when DATABASE_URL is not set.
+    "pgserver>=0.1.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning", "ignore:Using `httpx` with `starlette.testclient`"]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 160
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "PLC0415"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["PLC0415"]
+
+[tool.ruff.lint.isort]
+known-third-party = ["alembic"]

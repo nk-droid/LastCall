@@ -1,0 +1,59 @@
+name: e2e
+
+# Full browser journeys against a real API and the PayPal Sandbox. Run on demand: it makes real
+# Sandbox payments. Needs repository secrets PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET
+# (and optionally OLLAMA_API_KEY; without it the app uses its deterministic rules).
+on:
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lastcall
+          POSTGRES_PASSWORD: lastcall
+          POSTGRES_DB: lastcall
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U lastcall"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://lastcall:lastcall@localhost:5432/lastcall
+      PUBLIC_APP_URL: http://localhost:3787
+      SECRET_KEY: ci-only-secret-key
+      LOG_JSON: "false"
+      PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
+      PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET }}
+      OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+      SHOWCASE_PASSWORD: ci-showcase-password
+      E2E_SHOWCASE_PASSWORD: ci-showcase-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Seed showcase shops
+        working-directory: backend
+        run: uv sync --frozen && uv run python -m app.cli seed-showcase
+      - name: Install browsers
+        working-directory: frontend
+        run: npm ci && npx playwright install --with-deps chromium
+      - name: Run Playwright
+        working-directory: frontend
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/test-results
