@@ -12,6 +12,7 @@ from app.services import (  # noqa: F401 - each module registers its handlers on
     inventory,
     jobs,
     listings,
+    mail,
     orders,
     overview,
     pickup,

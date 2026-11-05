@@ -14,7 +14,7 @@ from app.api.deps import platform_admin
 from app.config import settings
 from app.db import transaction
 from app.errors import Forbidden, NotFound
-from app.models import AIInvocation, AuditEvent, Job, Merchant, Order, PaymentAttempt, SystemState
+from app.models import AIInvocation, AuditEvent, EmailMessage, Job, Merchant, Order, PaymentAttempt, SystemState
 from app.payments import faults
 from app.services import checkout, jobs, overview, shops, webhooks
 from app.services.accounts import SessionUser
@@ -212,3 +212,13 @@ def audit_log(limit: int = 100, admin: SessionUser = Depends(platform_admin)) ->
              "action": e.action, "meta": e.meta, "trace_id": e.trace_id}
             for e in events
         ]}
+
+
+@router.get("/emails")
+def emails(admin: SessionUser = Depends(platform_admin)) -> dict[str, Any]:
+    """Outbox metadata (bodies carry secret links and codes, so they aren't listed)."""
+    with transaction() as db:
+        rows = db.scalars(select(EmailMessage).order_by(EmailMessage.created_at.desc()).limit(60)).all()
+        return {"configured": settings().mail_configured, "emails": [
+            {"id": m.id, "to": m.to_email, "template": m.template, "subject": m.subject, "status": m.status, "attempts": m.attempts,
+             "last_error": m.last_error, "created_at": clock.iso(m.created_at), "sent_at": clock.iso(m.sent_at)} for m in rows]}

@@ -17,6 +17,7 @@ Rules enforced here:
 
 from __future__ import annotations
 
+import hmac
 import logging
 import re
 from datetime import datetime, timedelta
@@ -37,8 +38,8 @@ from app.observability import trace_id_var
 from app.payments import get_client
 from app.payments.base import PayPalError, PayPalOutcomeUnknown, extract_capture, order_amount, order_reference, trim
 from app.payments.payee import payee_object
-from app.security import pickup_code, pickup_code_hash, token_hash
-from app.services import analytics, audit, jobs, substitution
+from app.security import order_link_token, pickup_code, pickup_code_hash, token_hash
+from app.services import analytics, audit, jobs, notify, substitution
 from app.services import quotes as qs
 from app.services import reservations as rsv
 from app.services.alerts import raise_alert
@@ -145,7 +146,7 @@ def _order_access(db: Session, order_id: str, session_id: str | None, access_tok
         raise NotFound("Order not found", code="order_missing")
     if session_id and order.session_id == session_id:
         return order
-    if access_token and token_hash(access_token) == order.access_token_hash:
+    if access_token and (token_hash(access_token) == order.access_token_hash or hmac.compare_digest(access_token, order_link_token(order.id))):
         return order
     if user_id and order.customer_user_id == user_id:
         return order  # the same signed-in shopper, from another browser or device
@@ -521,6 +522,7 @@ def apply_capture_result(attempt_id: str, provider_payload: dict[str, Any], *, s
             audit.record(db, actor="provider:paypal", actor_role="system", entity_type="payment_attempt", entity_id=attempt.id,
                          action="capture_verified", meta={"capture_id": attempt.capture_id, "source": source, "amount_minor": attempt.amount_minor},
                          trace_id=order.trace_id)
+            notify.order_confirmed(db, order, merchant)
             return "captured"
         if status == "PENDING":
             attempt.state = "CAPTURE_PENDING"

@@ -41,6 +41,12 @@ def token_hash(token: str, purpose: str = "token") -> str:
     return hmac.new(key, f"{purpose}:{token}".encode(), hashlib.sha256).hexdigest()
 
 
+def order_link_token(order_id: str) -> str:
+    """The token in an order's emailed link: derived (not stored), stable, and unguessable without the secret."""
+    key = settings().resolved_secret_key().encode()
+    return hmac.new(key, f"order-link:{order_id}".encode(), hashlib.sha256).hexdigest()[:40]
+
+
 def pickup_code(order_id: str, salt: str) -> str:
     """Four-digit code shown on the customer's pickup pass."""
     key = settings().resolved_secret_key().encode()

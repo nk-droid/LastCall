@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     # Apply migrations on startup, serialized with an advisory lock.
     auto_migrate: bool = True
 
+    # Outbound email over SMTP (any provider; a Gmail app password works). Without SMTP_HOST,
+    # queued emails are marked "skipped" and the console shows invite and reset links to share.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str = "LastCall <no-reply@lastcall.app>"
+    smtp_starttls: bool = True
+
     # Lets platform admins arm PayPal failure injection (lost capture responses, timeouts,
     # declines) to demonstrate and test recovery. Sandbox only; keep off unless you need it.
     ops_faults_enabled: bool = False
@@ -72,6 +81,10 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
     log_json: bool = True
+
+    @property
+    def mail_configured(self) -> bool:
+        return bool(self.smtp_host)
 
     @property
     def paypal_configured(self) -> bool:

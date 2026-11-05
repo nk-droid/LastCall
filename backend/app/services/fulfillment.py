@@ -19,7 +19,7 @@ from app.db import transaction
 from app.errors import Conflict, NotFound, Unprocessable
 from app.models import AuditEvent, BundleQuote, Merchant, Order, PaymentAttempt, Refund, Reservation, SupportRequest
 from app.security import verify_pickup_code
-from app.services import analytics, audit, pickup
+from app.services import analytics, audit, notify, pickup
 from app.services import reservations as rsv
 from app.services.access import StaffContext, has_role
 from app.services.alerts import resolve_alerts
@@ -165,8 +165,9 @@ def fulfillment(user: StaffContext, order_id: str, req: FulfillmentAction) -> di
             order.fulfillment_status = "READY"
             order.ready_at = now
             analytics.track(db, "pickup_ready", merchant_id=order.merchant_id, session_id=order.session_id, entity_type="order", entity_id=order.id)
+            notified = notify.order_ready(db, order, merchant_by_id(db, order.merchant_id))
             audit.record(db, actor=user.actor, actor_role=user.role, entity_type="order", entity_id=order.id, action="fulfillment_ready",
-                         meta={"customer_notified_via": "pickup pass status"}, trace_id=order.trace_id)
+                         meta={"customer_notified_via": "email and pickup pass" if notified else "pickup pass status"}, trace_id=order.trace_id)
         elif req.action == "back_to_packing":
             if order.fulfillment_status != "READY":
                 raise Conflict("Only ready orders can go back to packing", code="invalid_transition")
