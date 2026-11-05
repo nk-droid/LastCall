@@ -23,6 +23,7 @@ from app.db import transaction
 from app.errors import Conflict, NotFound, Unprocessable
 from app.ids import new_id
 from app.models import Membership, Merchant, Product, User, UserSession
+from app.payments.payee import display as payee_display
 from app.services import audit, mail, pickup
 from app.services.access import StaffContext, has_role, require_role
 from app.services.accounts import SessionUser, account_view
@@ -171,6 +172,7 @@ def _checklist_items() -> list[tuple[str, str, Callable[[Session, Merchant], boo
                                                                          and (m.phone or m.support_email))),
         ("hours", "Opening hours and pickup windows", lambda db, m: any(m.pickup_config.get("windows", {}).get(d) for d in WEEKDAYS)),
         ("policies", "Cancellation, refund and allergen policies reviewed", lambda db, m: bool(m.verification.get("policies_confirmed_at"))),
+        ("payouts", "PayPal account connected for payouts", lambda db, m: (m.paypal or {}).get("status") == "connected"),
         ("catalog", "At least one product listed with a price", lambda db, m: db.scalar(
             select(Product.id).where(Product.merchant_id == m.id, Product.status == "active").limit(1)) is not None),
     ]
@@ -191,6 +193,7 @@ def shop_view(db: Session, merchant: Merchant, role: str | None = None) -> dict[
         "hours": merchant.hours,
         "pickup": merchant.pickup_config,
         "pickup_paused": merchant.pickup_paused,
+        "payouts": payee_display(merchant.paypal or {}),
         "policies": merchant.policies,
         "policy_version": merchant.policy_version,
         "checklist": items,

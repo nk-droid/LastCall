@@ -45,7 +45,8 @@ def test_create_shop_makes_owner_and_draft(app):
     assert body["account"]["active_shop_id"] == body["shop"]["id"]
     assert body["pickup"]["windows"]["mon"] == ["16:00", "19:00"]
     assert "The bakery reviews each request" in body["policies"]["cancellation_policy_text"]
-    assert {i["key"]: i["done"] for i in body["checklist"]} == {"profile": True, "hours": True, "policies": False, "catalog": False}
+    assert {i["key"]: i["done"] for i in body["checklist"]} == {"profile": True, "hours": True, "policies": False, "payouts": False,
+                                                                     "catalog": False}
     other = new_client(app)
     signup(other, "second@juniper-rye.com")
     assert other.post("/api/shops", json=PROFILE).json()["shop"]["slug"] == "juniper-rye-bakehouse-2"
@@ -65,8 +66,10 @@ def test_submit_requires_checklist_then_admin_approves(app):
     early = owner.post("/api/merchant/shop/submit")
     assert early.status_code == 422 and early.json()["error"]["code"] == "setup_incomplete"
     assert set(early.json()["error"]["details"]["missing"]) == {"Cancellation, refund and allergen policies reviewed",
+                                                                "PayPal account connected for payouts",
                                                                 "At least one product listed with a price"}
     owner.post("/api/merchant/shop/policies/confirm")
+    assert owner.put("/api/merchant/shop/payouts", json={"merchant_id": "JUNIPERRYE001"}).status_code == 200
     assert owner.post("/api/merchant/products", json=NEW_PRODUCT).status_code == 201
     submitted = owner.post("/api/merchant/shop/submit").json()
     assert submitted["shop"]["status"] == "pending_review"
@@ -87,6 +90,7 @@ def test_reject_resubmit_suspend_reinstate(app):
     admin = _admin(app)
     shop_id = body["shop"]["id"]
     owner.post("/api/merchant/shop/policies/confirm")
+    owner.put("/api/merchant/shop/payouts", json={"merchant_id": "JUNIPERRYE001"})
     owner.post("/api/merchant/products", json=NEW_PRODUCT)
     owner.post("/api/merchant/shop/submit")
     rejected = admin.post(f"/api/ops/shops/{shop_id}/reject", json={"note": "Add the allergen sheet for the muffins"}).json()

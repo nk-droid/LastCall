@@ -36,6 +36,7 @@ from app.money import format_money, to_decimal_string
 from app.observability import trace_id_var
 from app.payments import get_client
 from app.payments.base import PayPalError, PayPalOutcomeUnknown, extract_capture, order_amount, order_reference, trim
+from app.payments.payee import payee_object
 from app.security import pickup_code, pickup_code_hash, token_hash
 from app.services import analytics, audit, jobs, substitution
 from app.services import quotes as qs
@@ -98,10 +99,14 @@ def paypal_order_body(order: Order, quote: BundleQuote, attempt: PaymentAttempt,
     }
     if quote.fees_minor:
         breakdown["handling"] = {"currency_code": cur, "value": to_decimal_string(quote.fees_minor, cur)}
+    unit: dict[str, Any] = {}
+    if (payee := payee_object(attempt.payee)) is not None:
+        unit["payee"] = payee
     return {
         "intent": "CAPTURE",
         "purchase_units": [
             {
+                **unit,
                 "reference_id": order.id,
                 "custom_id": quote.id,
                 "invoice_id": f"{order.order_number}-{attempt.id[-8:]}",
@@ -113,13 +118,21 @@ def paypal_order_body(order: Order, quote: BundleQuote, attempt: PaymentAttempt,
         "payment_source": {
             "paypal": {
                 "experience_context": {
-                    "brand_name": settings().paypal_brand_name[:127],
+                    "brand_name": (merchant.name if attempt.payee else settings().paypal_brand_name)[:127],
                     "shipping_preference": "NO_SHIPPING",
                     "user_action": "PAY_NOW",
                 }
             }
         },
     }
+
+
+def payout_payee(merchant: Merchant) -> dict[str, Any] | None:
+    """The verified PayPal account a shop is paid into, as stored on new payment attempts."""
+    paypal = merchant.paypal or {}
+    if paypal.get("status") != "connected":
+        return None
+    return {k: paypal[k] for k in ("merchant_id", "email") if paypal.get(k)} or None
 
 
 def _order_access(db: Session, order_id: str, session_id: str | None, access_token: str | None, lock: bool = False,
@@ -241,6 +254,7 @@ def _prepare_order(db: Session, merchant: Merchant, quote: BundleQuote, res: Res
         attempt = PaymentAttempt(
             id=new_id("pay"), order_id=order.id, quote_id=quote.id, environment=client.environment,
             request_id=new_request_id(), state="CREATING", amount_minor=quote.amount_minor, currency=quote.currency,
+            payee=payout_payee(merchant),
         )
         db.add(attempt)
     res.state = "PAYMENT_IN_FLIGHT"

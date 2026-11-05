@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.api.deps import current_user, rate_limit, staff_role
-from app.services import shops
+from app.services import payouts, shops
 from app.services.access import StaffContext
 from app.services.accounts import SessionUser
 
@@ -52,6 +52,17 @@ def update_policies(body: dict[str, Any], ctx: StaffContext = Depends(staff_role
 @router.post("/merchant/shop/policies/confirm")
 def confirm_policies(ctx: StaffContext = Depends(staff_role("owner"))) -> dict[str, Any]:
     return shops.confirm_policies(ctx)
+
+
+@router.put("/merchant/shop/payouts")
+def connect_payouts(body: payouts.PayoutAccount, ctx: StaffContext = Depends(staff_role("owner"))) -> dict[str, Any]:
+    """Verify and save the PayPal business account this shop is paid into."""
+    return payouts.connect(ctx, body)
+
+
+@router.delete("/merchant/shop/payouts")
+def disconnect_payouts(ctx: StaffContext = Depends(staff_role("owner"))) -> dict[str, Any]:
+    return payouts.disconnect(ctx)
 
 
 @router.post("/merchant/shop/submit")

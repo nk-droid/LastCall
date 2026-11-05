@@ -66,6 +66,8 @@ class PaymentAttempt(Base):
     paypal_order_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     capture_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     request_id: Mapped[str] = mapped_column(String(64), unique=True)
+    # The shop's PayPal account this attempt pays ({"merchant_id"} or {"email"}); null pays the platform account.
+    payee: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     capture_request_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     # CREATING APPROVAL_PENDING APPROVED CAPTURE_REQUESTED CAPTURE_PENDING CAPTURED
     # CAPTURE_FAILED OUTCOME_UNKNOWN EXPIRED VOIDED

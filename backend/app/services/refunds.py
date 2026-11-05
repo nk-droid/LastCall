@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import clock
+from app.config import settings
 from app.db import transaction
 from app.errors import Conflict, NotFound, ProviderError, Unprocessable
 from app.ids import new_id, new_request_id
@@ -21,6 +22,7 @@ from app.models import Merchant, Order, PaymentAttempt, Refund, Reservation
 from app.money import format_money, to_decimal_string
 from app.payments import get_client
 from app.payments.base import PayPalError, PayPalOutcomeUnknown
+from app.payments.payee import auth_assertion
 from app.services import analytics, audit, jobs
 from app.services import reservations as rsv
 from app.services.access import StaffContext, require_role
@@ -95,19 +97,20 @@ def refund_order(user: StaffContext, order_id: str, req: RefundRequest) -> dict[
         audit.record(db, actor=user.actor, actor_role=user.role, entity_type="refund", entity_id=refund.id, action="refund_requested",
                      meta={"amount_minor": amount, "capture_id": attempt.capture_id, "request_id": refund.request_id, "reason": req.reason}, trace_id=order.trace_id)
         refund_id, capture_id, request_id = refund.id, attempt.capture_id, refund.request_id
+        assertion = auth_assertion(settings().paypal_client_id or "", attempt.payee)
         body = {
             "amount": {"value": to_decimal_string(amount, order.currency), "currency_code": order.currency},
             "invoice_id": f"{order.order_number}-R-{refund.id[-6:]}",
             "note_to_payer": f"Refund for {merchant.name} order {order.order_number}"[:255],
         }
-    _send_refund(client, refund_id, capture_id, body, request_id)
+    _send_refund(client, refund_id, capture_id, body, request_id, assertion)
     with transaction() as db:
         return refund_summary(db, db.get(Order, order_id))
 
 
-def _send_refund(client: Any, refund_id: str, capture_id: str, body: dict[str, Any], request_id: str) -> None:
+def _send_refund(client: Any, refund_id: str, capture_id: str, body: dict[str, Any], request_id: str, assertion: str | None) -> None:
     try:
-        result = client.refund_capture(capture_id, body, request_id)
+        result = client.refund_capture(capture_id, body, request_id, auth_assertion=assertion)
     except PayPalOutcomeUnknown as exc:
         with transaction() as db:
             refund = db.get(Refund, refund_id, with_for_update=True)
@@ -173,14 +176,15 @@ def reconcile_refund(refund_id: str) -> str:
         attempt = db.get(PaymentAttempt, refund.payment_attempt_id)
         order = db.get(Order, refund.order_id)
         paypal_refund_id, capture_id, request_id = refund.paypal_refund_id, attempt.capture_id, refund.request_id
+        assertion = auth_assertion(settings().paypal_client_id or "", attempt.payee)
         body = {"amount": {"value": to_decimal_string(refund.amount_minor, refund.currency), "currency_code": refund.currency},
                 "invoice_id": f"{order.order_number}-R-{refund.id[-6:]}"}
     try:
         if paypal_refund_id:
-            result = client.get_refund(paypal_refund_id)
+            result = client.get_refund(paypal_refund_id, auth_assertion=assertion)
         else:
             # Response was lost: replaying with the same PayPal-Request-Id returns the original refund.
-            result = client.refund_capture(capture_id, body, request_id)
+            result = client.refund_capture(capture_id, body, request_id, auth_assertion=assertion)
     except PayPalOutcomeUnknown as exc:
         raise jobs.RetryLater(str(exc)) from exc
     return apply_refund_result(refund_id, result)

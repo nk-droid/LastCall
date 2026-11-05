@@ -128,14 +128,19 @@ class SandboxPayPalClient:
 
     # ------------------------------------------------------------------ Payments v2
 
-    def get_capture(self, capture_id: str) -> dict[str, Any]:
-        return self._request("GET", f"/v2/payments/captures/{capture_id}", op="get_capture")
+    @staticmethod
+    def _assert(auth_assertion: str | None) -> dict[str, str]:
+        return {"PayPal-Auth-Assertion": auth_assertion} if auth_assertion else {}
 
-    def refund_capture(self, capture_id: str, body: dict[str, Any], request_id: str) -> dict[str, Any]:
-        return self._request("POST", f"/v2/payments/captures/{capture_id}/refund", op="refund", body=body, request_id=request_id)
+    def get_capture(self, capture_id: str, auth_assertion: str | None = None) -> dict[str, Any]:
+        return self._request("GET", f"/v2/payments/captures/{capture_id}", op="get_capture", extra_headers=self._assert(auth_assertion))
 
-    def get_refund(self, refund_id: str) -> dict[str, Any]:
-        return self._request("GET", f"/v2/payments/refunds/{refund_id}", op="get_refund")
+    def refund_capture(self, capture_id: str, body: dict[str, Any], request_id: str, auth_assertion: str | None = None) -> dict[str, Any]:
+        return self._request("POST", f"/v2/payments/captures/{capture_id}/refund", op="refund", body=body, request_id=request_id,
+                             extra_headers=self._assert(auth_assertion))
+
+    def get_refund(self, refund_id: str, auth_assertion: str | None = None) -> dict[str, Any]:
+        return self._request("GET", f"/v2/payments/refunds/{refund_id}", op="get_refund", extra_headers=self._assert(auth_assertion))
 
     # ------------------------------------------------------------------ Webhooks
 

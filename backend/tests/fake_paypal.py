@@ -8,6 +8,7 @@ refunds, and webhooks that carry PayPal's transmission headers.
 
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import hmac
@@ -58,6 +59,8 @@ class FakePayPal:
         self.mock_next_capture: str | None = None
         self.capture_pending = False  # the next capture comes back PENDING
         self.refund_pending = False  # the next refund comes back PENDING
+        self.invalid_payees: set[str] = set()  # payee merchant IDs / emails PayPal would reject
+        self.assertions: list[str | None] = []  # PayPal-Auth-Assertion values seen on refunds
         self._lock = threading.RLock()
 
     # ------------------------------------------------------------------ the buyer, in PayPal's window
@@ -111,6 +114,9 @@ class FakePayPal:
             raise PayPalError(422, "UNPROCESSABLE_ENTITY", "Amount does not match the breakdown", issue="AMOUNT_MISMATCH")
         if any(i["unit_amount"]["currency_code"] != amount.get("currency_code") for i in items):
             raise PayPalError(422, "UNPROCESSABLE_ENTITY", "Currency mismatch", issue="CURRENCY_MISMATCH")
+        payee = units[0].get("payee") or {}
+        if payee and (payee.get("merchant_id") in self.invalid_payees or payee.get("email_address") in self.invalid_payees):
+            raise PayPalError(422, "UNPROCESSABLE_ENTITY", "Payee account is invalid", issue="PAYEE_ACCOUNT_INVALID")
 
     def get_order(self, order_id: str) -> dict[str, Any]:
         with self._lock:
@@ -153,18 +159,30 @@ class FakePayPal:
                     return order, capture
         raise PayPalError(404, "RESOURCE_NOT_FOUND", "Capture not found", issue="INVALID_RESOURCE_ID")
 
-    def get_capture(self, capture_id: str) -> dict[str, Any]:
+    @staticmethod
+    def _assertion_matches(assertion: str | None, payee: dict[str, Any]) -> bool:
+        if not payee:
+            return True  # the platform's own transaction
+        if not assertion:
+            return False
+        claims = json.loads(base64.urlsafe_b64decode(assertion.split(".")[1] + "==="))
+        return claims.get("payer_id") == payee.get("merchant_id") if payee.get("merchant_id") else claims.get("email") == payee.get("email_address")
+
+    def get_capture(self, capture_id: str, auth_assertion: str | None = None) -> dict[str, Any]:
         with self._lock:
             order, capture = self._find_capture(capture_id)
             self._resolve_pending(order)
             return _public(copy.deepcopy(capture)) | {"supplementary_data": {"related_ids": {"order_id": order["id"]}}}
 
-    def refund_capture(self, capture_id: str, body: dict[str, Any], request_id: str) -> dict[str, Any]:
+    def refund_capture(self, capture_id: str, body: dict[str, Any], request_id: str, auth_assertion: str | None = None) -> dict[str, Any]:
         with self._lock:
+            self.assertions.append(auth_assertion)
             if (replay := self._replay(request_id, "refund")) is not None:
                 return replay
-            pending, self.refund_pending = self.refund_pending, False
             order, capture = self._find_capture(capture_id)
+            if not self._assertion_matches(auth_assertion, order["purchase_units"][0].get("payee") or {}):
+                raise PayPalError(403, "NOT_AUTHORIZED", "Authorization failed due to insufficient permissions", issue="PERMISSION_DENIED")
+            pending, self.refund_pending = self.refund_pending, False
             if capture["status"] not in ("COMPLETED", "PARTIALLY_REFUNDED"):
                 raise PayPalError(422, "UNPROCESSABLE_ENTITY", f"Capture is {capture['status']}",
                                   issue="CAPTURE_FULLY_REFUNDED" if capture["status"] == "REFUNDED" else "INVALID_CAPTURE_STATE")
@@ -184,7 +202,7 @@ class FakePayPal:
             self._emit("PAYMENT.CAPTURE.REFUNDED", "refund", refund, order["id"], capture_id=capture_id)
         return response
 
-    def get_refund(self, refund_id: str) -> dict[str, Any]:
+    def get_refund(self, refund_id: str, auth_assertion: str | None = None) -> dict[str, Any]:
         with self._lock:
             for order in self.orders.values():
                 self._resolve_pending(order)
