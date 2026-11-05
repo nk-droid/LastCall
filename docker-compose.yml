@@ -1,0 +1,22 @@
+# Optional local PostgreSQL (the backend otherwise starts an embedded one for development).
+#   docker compose up -d
+#   DATABASE_URL=postgresql://lastcall:lastcall@localhost:5433/lastcall   (in backend/.env)
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: lastcall
+      POSTGRES_PASSWORD: lastcall
+      POSTGRES_DB: lastcall
+    ports:
+      - "5433:5432"
+    volumes:
+      - lastcall-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lastcall -d lastcall"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  lastcall-pg:
