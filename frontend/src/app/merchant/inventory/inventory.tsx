@@ -600,6 +600,7 @@ function ItemEditor({ row, canManage, onSaved, update }: { row: InventoryRow; ca
   const zone = useShopZone();
   const [tab, setTab] = useState<TabKey>("stock");
   const [surplus, setSurplus] = useState(row.surplus);
+  const [counterQty, setCounterQty] = useState(1);
   const [buffer, setBuffer] = useState(row.buffer);
   const [cutoff, setCutoff] = useState(row.cutoff_local);
   const [details, setDetails] = useState({
@@ -731,6 +732,32 @@ function ItemEditor({ row, canManage, onSaved, update }: { row: InventoryRow; ca
             <StockBreakdown row={row} />
             <Card>
               <Stack sx={{ py: 0.5 }}>
+                <Box
+                  component="form"
+                  sx={formRow}
+                  onSubmit={(e: FormEvent) => {
+                    e.preventDefault();
+                    void run("counter", () => update(row, { action: "counter_sale", delta: counterQty, reason: "Sold at the counter" }, undefined, `${counterQty} sold at the counter`), "Counter sale recorded.");
+                  }}
+                >
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Sold at the counter"
+                    value={counterQty}
+                    onChange={(e) => setCounterQty(Math.max(1, Number(e.target.value)))}
+                    helperText={`${row.available} available to sell here`}
+                    slotProps={{ htmlInput: { min: 1, max: Math.max(1, row.available) } }}
+                    sx={{ width: 180 }}
+                  />
+                  <Button type="submit" variant="contained" loading={busy === "counter"} disabled={row.available < 1} sx={{ minHeight: 40 }}>
+                    Record sale
+                  </Button>
+                  <Button variant="outlined" color="inherit" disabled={row.available < 1 || busy === "counter"} sx={{ minHeight: 40 }}
+                    onClick={() => run("counter", () => update(row, { action: "counter_sale", delta: row.available, reason: "Sold out at the counter" }, undefined, "sold out"), "Marked sold out.")}>
+                    Sold out
+                  </Button>
+                </Box>
                 <Box
                   component="form"
                   sx={formRow}
