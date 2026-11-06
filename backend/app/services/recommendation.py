@@ -201,7 +201,9 @@ def _no_match(intent: Intent, items: list[CatalogItem], checks: list[ItemCheck],
     return {"headline": reasons[0] if reasons else "No bundle fits your request right now.", "reasons": reasons, "suggestions": suggestions}
 
 
-def propose(intent_id: str, session_id: str) -> dict[str, Any]:
+def propose(intent_id: str, session_id: str, *, ai_rationale: bool = True) -> dict[str, Any]:
+    """Bundle options for a parsed intent. ``ai_rationale=False`` skips the L2 model pass (the concierge
+    agent writes its own explanation), leaving the code-built options and rules rationales unchanged."""
     with transaction() as db:
         ci = db.get(CustomerIntent, intent_id)
         if ci is None or ci.session_id != session_id:
@@ -232,7 +234,7 @@ def propose(intent_id: str, session_id: str) -> dict[str, Any]:
     ai_meta: dict[str, Any] = {"used": False}
     rationales: dict[str, dict[str, str]] = {}
     ai_invocation_id = None
-    if chosen and settings().ai_bundle_rationale:
+    if chosen and ai_rationale and settings().ai_bundle_rationale:
         chosen, rationales, ai_meta, ai_invocation_id = _ai_pass(chosen, scored, eligible, intent, ctx, weights, merchant, now)
 
     options = []

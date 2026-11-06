@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, created_col
+from app.models.base import Base, created_col, updated_col
 
 
 class AgentRun(Base):
@@ -51,3 +51,22 @@ class AgentStep(Base):
     ok: Mapped[bool] = mapped_column(Boolean, default=True)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = created_col()
+
+
+class Conversation(Base):
+    """A shopper's chat with an agent (the concierge). Messages are stored redacted; each turn is one AgentRun."""
+
+    __tablename__ = "agent_conversations"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(40), default="concierge")
+    session_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Set when the chat is opened on one shop's storefront; the agent then only looks at that shop.
+    scope_merchant_id: Mapped[str | None] = mapped_column(ForeignKey("merchants.id"), nullable=True)
+    messages: Mapped[list[Any]] = mapped_column(default=list)
+    status: Mapped[str] = mapped_column(String(20), default="idle")  # idle | working
+    progress: Mapped[list[Any]] = mapped_column(default=list)  # what the agent is doing this turn, for the UI
+    last_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = created_col()
+    updated_at: Mapped[datetime] = updated_col()
