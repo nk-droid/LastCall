@@ -14,7 +14,8 @@ from app.api.deps import platform_admin
 from app.config import settings
 from app.db import transaction
 from app.errors import Forbidden, NotFound
-from app.models import AIInvocation, AuditEvent, EmailMessage, Job, Merchant, Order, PaymentAttempt, SystemState
+from app.ai.agent import run_view
+from app.models import AgentRun, AgentStep, AIInvocation, AuditEvent, EmailMessage, Job, Merchant, Order, PaymentAttempt, SystemState
 from app.payments import faults
 from app.services import checkout, jobs, overview, shops, webhooks
 from app.services.accounts import SessionUser
@@ -138,9 +139,35 @@ def ai_invocations(admin: SessionUser = Depends(platform_admin)) -> dict[str, An
         return {"invocations": [
             {"id": r.id, "task": r.task, "prompt_version": r.prompt_version, "validation_result": r.validation_result,
              "failure_reason": r.failure_reason, "latency_ms": r.latency_ms, "input_tokens": r.input_tokens, "output_tokens": r.output_tokens,
-             "repaired": r.repaired, "fallback_used": r.fallback_used, "input_hash": r.input_hash[:12], "created_at": clock.iso(r.created_at)}
+             "repaired": r.repaired, "fallback_used": r.fallback_used, "input_hash": r.input_hash[:12], "agent_run_id": r.agent_run_id,
+             "created_at": clock.iso(r.created_at)}
             for r in rows
         ]}
+
+
+@router.get("/agent-runs")
+def agent_runs(kind: str | None = None, admin: SessionUser = Depends(platform_admin)) -> dict[str, Any]:
+    """Recent agent runs with their step traces, newest first."""
+    with transaction() as db:
+        query = select(AgentRun).order_by(AgentRun.created_at.desc()).limit(40)
+        if kind:
+            query = query.where(AgentRun.kind == kind)
+        runs = db.scalars(query).all()
+        steps = db.scalars(select(AgentStep).where(AgentStep.run_id.in_([r.id for r in runs])).order_by(AgentStep.idx)).all() if runs else []
+        by_run: dict[str, list[AgentStep]] = {}
+        for st in steps:
+            by_run.setdefault(st.run_id, []).append(st)
+        return {"runs": [run_view(r, by_run.get(r.id, [])) for r in runs]}
+
+
+@router.get("/agent-runs/{run_id}")
+def agent_run(run_id: str, admin: SessionUser = Depends(platform_admin)) -> dict[str, Any]:
+    with transaction() as db:
+        run = db.get(AgentRun, run_id)
+        if run is None:
+            raise NotFound("Agent run not found")
+        steps = db.scalars(select(AgentStep).where(AgentStep.run_id == run_id).order_by(AgentStep.idx)).all()
+        return run_view(run, list(steps))
 
 
 @router.get("/jobs")

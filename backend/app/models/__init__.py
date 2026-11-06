@@ -5,6 +5,7 @@ import from ``app.models``.
 """
 
 from app.models.accounts import SHOP_ROLES, Invite, Membership, PasswordReset, User, UserSession
+from app.models.agents import AgentRun, AgentStep
 from app.models.ai import AIInvocation
 from app.models.base import Base
 from app.models.catalog import (
@@ -27,6 +28,6 @@ from app.models.system import AuditEvent, Job, SystemState
 
 __all__ = [
     "MERCHANT_STATUSES", "PRODUCT_CATEGORIES", "SHOP_ROLES",
-    "AIInvocation", "AnalyticsEvent", "Asset", "AuditEvent", "BundleProposal", "BundleQuote", "CustomerIntent", "Base", "EmailMessage", "FaultInjection", "InventoryEvent", "InventoryLot", "Invite", "Job", "Membership", "Merchant",
+    "AgentRun", "AgentStep", "AIInvocation", "AnalyticsEvent", "Asset", "AuditEvent", "BundleProposal", "BundleQuote", "CustomerIntent", "Base", "EmailMessage", "FaultInjection", "InventoryEvent", "InventoryLot", "Invite", "Job", "Membership", "Merchant",
     "MerchantAlert", "MetricSnapshot", "Order", "PasswordReset", "PaymentAttempt", "PickupSlot", "Price", "Product", "Refund", "Reservation", "ReservationLine", "SubstitutionOffer", "SupportRequest", "SystemState", "User", "UserSession", "WebhookEvent",
 ]

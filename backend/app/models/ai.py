@@ -27,4 +27,6 @@ class AIInvocation(Base):
     output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     repaired: Mapped[bool] = mapped_column(Boolean, default=False)
     fallback_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Set when the call was one turn of an agent run (see app.models.agents).
+    agent_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     created_at: Mapped[datetime] = created_col()
