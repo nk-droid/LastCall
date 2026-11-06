@@ -7,6 +7,7 @@ import { useState } from "react";
 
 import { useAnnounce } from "@/components/announcer";
 import { hasRole, useStaff } from "@/components/merchant-shell";
+import { SlotsTimeline, TimelineToggle, type TimelineView } from "@/components/pickup-timeline";
 import { ErrorState, FactChip, LoadingBlock, PageHeader, SectionCard, StatusChip } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import type { ShopSettings, Slot } from "@/lib/types";
@@ -72,6 +73,7 @@ function UpcomingSlots({ canEdit }: { canEdit: boolean }) {
   const slots = useResource((signal) => api<{ slots: Slot[] }>("/api/merchant/slots", { signal }), [], { pollMs: 30_000 });
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<TimelineView>("timeline");
   async function update(slot: Slot, body: { capacity?: number; status?: string }) {
     setBusy(`slot-${slot.id}`);
     setError(null);
@@ -86,9 +88,17 @@ function UpcomingSlots({ canEdit }: { canEdit: boolean }) {
     }
   }
   return (
-    <SectionCard title="Upcoming pickup slots" subtitle="Today and tomorrow. Close a slot or change its capacity." icon={<EventAvailableRounded />}>
+    <SectionCard title="Upcoming pickup slots" icon={<EventAvailableRounded />}
+      subtitle={view === "timeline" && canEdit ? "Today and tomorrow. Right-click a slot to add or remove a spot, or close it." : "Today and tomorrow. Close a slot or change its capacity."}
+      action={<TimelineToggle value={view} onChange={setView} listLabel="Table" />}>
       {error ? <Box role="alert" sx={{ color: "error.main", mb: 1.5 }}>{error}</Box> : null}
-      {slots.data ? <SlotTable slots={slots.data.slots} canEdit={canEdit} busy={busy} onUpdate={update} /> : <LoadingBlock label="Loading slots" lines={3} />}
+      {!slots.data ? (
+        <LoadingBlock label="Loading slots" lines={3} />
+      ) : view === "timeline" && slots.data.slots.length ? (
+        <SlotsTimeline slots={slots.data.slots} canEdit={canEdit} onUpdate={update} />
+      ) : (
+        <SlotTable slots={slots.data.slots} canEdit={canEdit} busy={busy} onUpdate={update} />
+      )}
     </SectionCard>
   );
 }
