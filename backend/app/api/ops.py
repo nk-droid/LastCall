@@ -10,11 +10,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from app import clock
+from app.ai.agent import run_view
 from app.api.deps import platform_admin
 from app.config import settings
 from app.db import transaction
 from app.errors import Forbidden, NotFound
-from app.ai.agent import run_view
 from app.models import AgentRun, AgentStep, AIInvocation, AuditEvent, EmailMessage, Job, Merchant, Order, PaymentAttempt, SystemState
 from app.payments import faults
 from app.services import checkout, jobs, overview, shops, webhooks
