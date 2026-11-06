@@ -82,8 +82,8 @@ function Cell({ children, mono }: { children: ReactNode; mono?: boolean }) {
 function DataTable({ head, children, empty }: { head: string[]; children: ReactNode; empty?: boolean }) {
   if (empty) return <Typography color="text.secondary">Nothing here yet.</Typography>;
   return (
-    <Box sx={{ overflowX: "auto", mx: { xs: -2, sm: -2.5 } }}>
-      <Table size="small" sx={{ minWidth: 720, "& td:first-of-type, & th:first-of-type": { pl: { xs: 2, sm: 2.5 } } }}>
+    <Box sx={{ overflowX: "auto", mx: { xs: -2.5, sm: -3 } }}>
+      <Table size="small" sx={{ minWidth: 720, "& td:first-of-type, & th:first-of-type": { pl: { xs: 2.5, sm: 3 } } }}>
         <TableHead><TableRow>{head.map((h) => <TableCell key={h}>{h}</TableCell>)}</TableRow></TableHead>
         <TableBody>{children}</TableBody>
       </Table>

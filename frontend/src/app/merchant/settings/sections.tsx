@@ -124,19 +124,19 @@ export function ProfileSection({ settings, onSaved }: { settings: ShopSettings; 
           <TextField label="About your surplus" fullWidth multiline minRows={2} value={form.description} onChange={set("description")} disabled={disabled}
             slotProps={{ htmlInput: { maxLength: 1200 } }} helperText="When you list leftovers and what shoppers can expect." />
         </Grid>
-        <Grid size={{ xs: 12, sm: 8 }}>
+        <Grid size={{ xs: 12, sm: 8, md: 5 }}>
           <TextField label="Street address" fullWidth required value={address.line1} onChange={setAddr("line1")} disabled={disabled} autoComplete="address-line1" />
         </Grid>
-        <Grid size={{ xs: 12, sm: 4 }}>
+        <Grid size={{ xs: 12, sm: 4, md: 3 }}>
           <TextField label="City" fullWidth required value={address.city} onChange={setAddr("city")} disabled={disabled} autoComplete="address-level2" />
         </Grid>
-        <Grid size={{ xs: 6, sm: 4 }}>
+        <Grid size={{ xs: 6, sm: 4, md: 2 }}>
           <TextField label="State" fullWidth value={address.region} onChange={setAddr("region")} disabled={disabled} autoComplete="address-level1" />
         </Grid>
-        <Grid size={{ xs: 6, sm: 4 }}>
+        <Grid size={{ xs: 6, sm: 4, md: 2 }}>
           <TextField label="ZIP code" fullWidth value={address.postal_code} onChange={setAddr("postal_code")} disabled={disabled} autoComplete="postal-code" />
         </Grid>
-        <Grid size={{ xs: 12, sm: 4 }}>
+        <Grid size={{ xs: 12, sm: 4, md: 4 }}>
           <TextField select label="Time zone" fullWidth value={form.timezone} onChange={set("timezone")} disabled={disabled || s.status === "live"}
             error={!!fields.timezone} helperText={fields.timezone ?? (s.status === "live" ? "Fixed once live" : " ")}>
             {(TIMEZONES.includes(form.timezone) ? TIMEZONES : [form.timezone, ...TIMEZONES]).map((tz) => (
@@ -144,10 +144,10 @@ export function ProfileSection({ settings, onSaved }: { settings: ShopSettings; 
             ))}
           </TextField>
         </Grid>
-        <Grid size={{ xs: 12, sm: 6 }}>
+        <Grid size={{ xs: 12, sm: 6, md: 4 }}>
           <TextField label="Phone" fullWidth value={form.phone} onChange={set("phone")} disabled={disabled} autoComplete="tel" />
         </Grid>
-        <Grid size={{ xs: 12, sm: 6 }}>
+        <Grid size={{ xs: 12, sm: 6, md: 4 }}>
           <TextField label="Support email" type="email" fullWidth value={form.support_email} onChange={set("support_email")} disabled={disabled}
             error={!!fields.support_email} helperText={fields.support_email ?? "Shown to customers who need help with an order"} />
         </Grid>
@@ -193,12 +193,13 @@ export function HoursSection({ settings, onSaved }: { settings: ShopSettings; on
           label={settings.pickup_paused ? "Pickup paused" : "Taking pickups"} />
       ) : settings.pickup_paused ? <StatusChip tone="warning" icon={PauseCircleRounded} label="Pickup paused" /> : null}>
       <ErrorLine message={error ?? pause.error} />
-      <Box sx={{ overflowX: "auto", mx: { xs: -2, sm: -2.5 } }}>
-        <Table size="small" sx={{ minWidth: 620 }}>
+      {/* Bleed to the card edges so the columns get the whole width; gutters match the card padding. */}
+      <Box sx={{ overflowX: "auto", mx: { xs: -2.5, sm: -3 } }}>
+        <Table size="small" sx={{ minWidth: 900, "& th:first-of-type, & td:first-of-type": { pl: { xs: 2.5, sm: 3 } }, "& th:last-of-type, & td:last-of-type": { pr: { xs: 2.5, sm: 3 } } }}>
           <caption className="sr-only">Opening hours and pickup windows for each day</caption>
           <TableHead>
             <TableRow>
-              <TableCell sx={{ pl: { xs: 2, sm: 2.5 } }}>Day</TableCell>
+              <TableCell>Day</TableCell>
               <TableCell>Pickup</TableCell>
               <TableCell>Pickup window</TableCell>
               <TableCell>Shop hours</TableCell>
@@ -211,7 +212,7 @@ export function HoursSection({ settings, onSaved }: { settings: ShopSettings; on
               const err = fields[`pickup.windows.${key}`] ?? fields[`hours.${key}`];
               return (
                 <TableRow key={key}>
-                  <TableCell sx={{ pl: { xs: 2, sm: 2.5 }, fontWeight: 650 }}>{label}</TableCell>
+                  <TableCell sx={{ fontWeight: 650 }}>{label}</TableCell>
                   <TableCell>
                     <Switch checked={!!win} disabled={disabled} onChange={(e) => toggleDay(key, e.target.checked)} slotProps={{ input: { "aria-label": `Pickup on ${label}` } }} />
                   </TableCell>
@@ -267,7 +268,7 @@ export function HoursSection({ settings, onSaved }: { settings: ShopSettings; on
 function TimeInput({ label, value, onChange, disabled }: { label: string; value: string; onChange: (v: string) => void; disabled?: boolean }) {
   return (
     <TextField type="time" size="small" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}
-      slotProps={{ htmlInput: { "aria-label": label, step: 300 } }} sx={{ width: 150 }} />
+      slotProps={{ htmlInput: { "aria-label": label, step: 300 } }} sx={{ width: 136 }} />
   );
 }
 
@@ -467,22 +468,22 @@ export function SlotTable({ slots, canEdit, busy, onUpdate }: { slots: Slot[]; c
   }
   if (!slots.length) return <Typography color="text.secondary">No upcoming pickup slots. Turn on pickup for a day above.</Typography>;
   return (
-    <Box sx={{ position: "relative", overflowX: "auto", minWidth: 0, mx: { xs: -2, sm: -2.5 }, mb: { xs: -2, sm: -2.5 } }}>
+    <Box sx={{ position: "relative", overflowX: "auto", minWidth: 0, mx: { xs: -2.5, sm: -3 }, mb: { xs: -2.5, sm: -3 } }}>
       <Table size="small" sx={{ minWidth: 560 }}>
         <caption className="sr-only">Upcoming pickup slots with bookings, capacity and status</caption>
         <TableHead>
           <TableRow>
-            <TableCell sx={{ pl: { xs: 2, sm: 2.5 } }}>Time</TableCell>
+            <TableCell sx={{ pl: { xs: 2.5, sm: 3 } }}>Time</TableCell>
             <TableCell>Booked</TableCell>
             <TableCell>Capacity</TableCell>
             <TableCell>Status</TableCell>
-            <TableCell align="right" sx={{ pr: { xs: 2, sm: 2.5 } }}><span className="sr-only">Actions</span></TableCell>
+            <TableCell align="right" sx={{ pr: { xs: 2.5, sm: 3 } }}><span className="sr-only">Actions</span></TableCell>
           </TableRow>
         </TableHead>
         {groups.map((group) => (
           <TableBody key={group.date}>
             <TableRow>
-              <TableCell component="th" scope="rowgroup" colSpan={5} sx={{ pl: { xs: 2, sm: 2.5 }, pt: 2.5, pb: 1 }}>
+              <TableCell component="th" scope="rowgroup" colSpan={5} sx={{ pl: { xs: 2.5, sm: 3 }, pt: 2.5, pb: 1 }}>
                 <Stack direction="row" spacing={1.5} sx={{ alignItems: "baseline" }}>
                   <Typography variant="subtitle2" component="span">{group.day}</Typography>
                   <Typography variant="caption" color="text.secondary" className="tabular">{group.booked} of {group.capacity} booked</Typography>
@@ -495,7 +496,7 @@ export function SlotTable({ slots, canEdit, busy, onUpdate }: { slots: Slot[]; c
               const fill = slot.capacity > 0 ? (slot.booked / slot.capacity) * 100 : 0;
               return (
                 <TableRow key={slot.id} hover>
-                  <TableCell sx={{ pl: { xs: 2, sm: 2.5 }, fontWeight: 650, whiteSpace: "nowrap" }} className="tabular">{splitLabel(slot.label).time}</TableCell>
+                  <TableCell sx={{ pl: { xs: 2.5, sm: 3 }, fontWeight: 650, whiteSpace: "nowrap" }} className="tabular">{splitLabel(slot.label).time}</TableCell>
                   <TableCell>
                     <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 120 }}>
                       <LinearProgress variant="determinate" value={Math.min(100, fill)} aria-label={`${slot.label}: ${slot.booked} of ${slot.capacity} booked`}
@@ -514,7 +515,7 @@ export function SlotTable({ slots, canEdit, busy, onUpdate }: { slots: Slot[]; c
                       {status.reason ? <InfoTip label={`Why ${slot.label} is ${status.label.toLowerCase()}`} title={status.reason} /> : null}
                     </Stack>
                   </TableCell>
-                  <TableCell align="right" sx={{ pr: { xs: 2, sm: 2.5 } }}>
+                  <TableCell align="right" sx={{ pr: { xs: 2.5, sm: 3 } }}>
                     <Button size="small" variant="outlined" color="inherit" disabled={!canEdit} loading={busy === `slot-${slot.id}`}
                       startIcon={closedByMerchant ? <LockOpenRounded /> : <BlockRounded />} aria-label={`${closedByMerchant ? "Reopen" : "Close"} ${slot.label}`}
                       onClick={() => onUpdate(slot, { status: slot.bookable || !closedByMerchant ? "closed" : "open" })}>
