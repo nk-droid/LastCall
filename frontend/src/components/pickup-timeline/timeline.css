@@ -106,7 +106,19 @@
 .lc-slots .lc-slot-closed .lc-hist-track {
   background: repeating-linear-gradient(135deg, #e1e5de 0 4px, #f8f7f2 4px 8px);
 }
-.lc-slots .lc-slot-started,
-.lc-slots .lc-slot-unavailable {
+/* Dim the column of a slot that can't be booked, but keep its count readable (WCAG contrast). */
+.lc-slots .lc-slot-started .lc-hist-track,
+.lc-slots .lc-slot-unavailable .lc-hist-track {
   opacity: 0.5;
+}
+.lc-slots .lc-slot-started .lc-hist-label,
+.lc-slots .lc-slot-unavailable .lc-hist-label {
+  color: #52645b;
+}
+
+/* "Now" marker: brand colours, readable (Bryntum's default white-on-amber is 1.8:1). */
+.lc-timeline .b-sch-time-range.lc-now {
+  background-color: #14231d;
+  border-color: #14231d;
+  color: #ffffff;
 }

@@ -43,6 +43,10 @@ export async function relist(api: APIRequestContext): Promise<void> {
   expect(res.ok(), await res.text()).toBeTruthy();
 }
 
+// Bryntum's grid scaffolding (vendor markup) trips aria-required-children; every other rule, contrast included,
+// still runs on everything inside the timelines.
+const VENDOR_NODES = [{ rule: "aria-required-children", target: /^(\.b-grid-panel-body|#b-scheduler-\d+-\w+Subgrid)$/ }];
+
 /** WCAG 2.2 A/AA scan of the current page (axe-core). */
 export async function expectAccessible(page: Page, label: string): Promise<void> {
   await page.waitForFunction(() => document.getAnimations().every((a) => !(a instanceof CSSTransition) || a.playState !== "running"));
@@ -51,7 +55,10 @@ export async function expectAccessible(page: Page, label: string): Promise<void>
     .exclude("iframe[name^='__zoid__']")
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .analyze();
-  const summary = results.violations.map((v) => `${v.id} (${v.impact}): ${v.help} -> ${v.nodes.map((n) => n.target.join(" ")).slice(0, 3).join(" | ")}`);
+  const violations = results.violations
+    .map((v) => ({ ...v, nodes: v.nodes.filter((n) => !VENDOR_NODES.some((x) => x.rule === v.id && n.target.every((t) => x.target.test(String(t))))) }))
+    .filter((v) => v.nodes.length);
+  const summary = violations.map((v) => `${v.id} (${v.impact}): ${v.help} -> ${v.nodes.map((n) => n.target.join(" ")).slice(0, 3).join(" | ")}`);
   expect(summary, `axe violations on ${label}`).toEqual([]);
 }
 
