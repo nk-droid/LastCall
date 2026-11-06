@@ -23,7 +23,7 @@ import {
   WebhookRounded,
 } from "@mui/icons-material";
 import { Alert, Box, Button, Grid, IconButton, LinearProgress, Link, ListItemButton, Stack, Typography } from "@mui/material";
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 
 import { useAnnounce } from "@/components/announcer";
 import { ProductImage } from "@/components/product-image";
@@ -150,10 +150,37 @@ export function Today() {
   );
 }
 
+/** Caps a long list so the card keeps its height and the list scrolls inside it. Focusable so keyboard users can scroll it too. */
+function ScrollArea({ label, maxHeight, children, ref }: { label: string; maxHeight: number; children: ReactNode; ref?: Ref<HTMLDivElement> }) {
+  return (
+    <Box
+      ref={ref}
+      role="region"
+      aria-label={label}
+      tabIndex={0}
+      sx={{
+        maxHeight,
+        overflowY: "auto",
+        overscrollBehavior: "contain",
+        scrollbarWidth: "thin",
+        position: "relative",
+        // Padding gives the raised tiles room for their shadows, which overflow would otherwise clip.
+        p: 0.75,
+        m: -0.75,
+        borderRadius: "14px",
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
+
 function NeedsAttention({ overview, onResolved }: { overview: Overview; onResolved: () => void }) {
   return (
     <SectionCard title="Needs attention" icon={<WarningAmberRounded />}>
-      <Alerts overview={overview} onResolved={onResolved} />
+      <ScrollArea label="Items needing attention" maxHeight={440}>
+        <Alerts overview={overview} onResolved={onResolved} />
+      </ScrollArea>
     </SectionCard>
   );
 }
@@ -231,6 +258,18 @@ function OrdersCard({ overview: o }: { overview: Overview }) {
 function SlotsCard({ slots }: { slots: Overview["slots"] }) {
   const booked = slots.reduce((n, s) => n + s.booked, 0);
   const capacity = slots.reduce((n, s) => n + s.capacity, 0);
+  const scroller = useRef<HTMLDivElement>(null);
+  const scrolled = useRef(false);
+  // Open on the window that's happening now, not midnight. Once only, so polling never yanks the list.
+  useEffect(() => {
+    const box = scroller.current;
+    if (scrolled.current || !box || !slots.length) return;
+    scrolled.current = true;
+    const now = Date.now();
+    const current = slots.find((s) => Date.parse(s.ends_at) > now);
+    const row = current ? box.querySelector<HTMLElement>(`[data-slot="${current.id}"]`) : null;
+    if (row) box.scrollTop = row.offsetTop - 6;
+  }, [slots]);
   return (
     <SectionCard
       title="Pickup window utilization"
@@ -252,29 +291,31 @@ function SlotsCard({ slots }: { slots: Overview["slots"] }) {
             </Box>
             pickup spots booked today
           </Typography>
-          <Box component="ul" sx={{ ...list, display: "grid", gap: 2 }}>
-            {slots.map((s) => {
-              const pct = s.capacity ? Math.min(100, Math.round((s.booked / s.capacity) * 100)) : 100;
-              const full = pct >= 100;
-              const label = s.label.replace("Today ", "");
-              return (
-                <li key={s.id}>
-                  <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center", mb: 0.75 }}>
-                    <Typography variant="body2" sx={{ fontWeight: 650 }}>
-                      {label}
-                    </Typography>
-                    <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                      {full ? <StatusChip tone="warning" label="Full" /> : null}
-                      <Typography variant="body2" color="text.secondary" className="tabular">
-                        {s.booked}/{s.capacity} booked
+          <ScrollArea label="Pickup windows today" maxHeight={340} ref={scroller}>
+            <Box component="ul" sx={{ ...list, display: "grid", gap: 2 }}>
+              {slots.map((s) => {
+                const pct = s.capacity ? Math.min(100, Math.round((s.booked / s.capacity) * 100)) : 100;
+                const full = pct >= 100;
+                const label = s.label.replace("Today ", "");
+                return (
+                  <li key={s.id} data-slot={s.id}>
+                    <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center", mb: 0.75 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 650 }}>
+                        {label}
                       </Typography>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                        {full ? <StatusChip tone="warning" label="Full" /> : null}
+                        <Typography variant="body2" color="text.secondary" className="tabular">
+                          {s.booked}/{s.capacity} booked
+                        </Typography>
+                      </Stack>
                     </Stack>
-                  </Stack>
-                  <LinearProgress variant="determinate" value={pct} color={full ? "warning" : "primary"} aria-label={`${label}: ${s.booked} of ${s.capacity} booked`} />
-                </li>
-              );
-            })}
-          </Box>
+                    <LinearProgress variant="determinate" value={pct} color={full ? "warning" : "primary"} aria-label={`${label}: ${s.booked} of ${s.capacity} booked`} />
+                  </li>
+                );
+              })}
+            </Box>
+          </ScrollArea>
         </>
       ) : (
         <EmptyState icon={ScheduleRounded} title="No pickup windows today" />

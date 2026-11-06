@@ -41,7 +41,6 @@ import {
   Grid,
   IconButton,
   InputAdornment,
-  LinearProgress,
   Radio,
   RadioGroup,
   Stack,
@@ -54,6 +53,7 @@ import {
   TableSortLabel,
   Tabs,
   TextField,
+  Tooltip,
   Typography,
   useMediaQuery,
 } from "@mui/material";
@@ -74,7 +74,7 @@ import { useResource } from "@/lib/use-api";
 
 import { AddProductButton } from "./add-product";
 
-type SortKey = "name" | "available" | "surplus" | "cutoff" | "price" | "updated";
+type SortKey = "name" | "available" | "cutoff" | "price" | "updated";
 type View = "all" | "attention" | "paused";
 type TabKey = "stock" | "details" | "allergens" | "price" | "history";
 type Update = (row: InventoryRow, body: Record<string, unknown>, optimistic?: Partial<InventoryRow>, label?: string) => Promise<InventoryRow | null>;
@@ -133,7 +133,7 @@ export function Inventory() {
 
   const all = (inv.data?.rows ?? []).map((r) => pending[r.product_id] ?? r);
   const sortValue = (r: InventoryRow) =>
-    sort.key === "name" ? r.name : sort.key === "available" ? r.available : sort.key === "surplus" ? r.surplus : sort.key === "cutoff" ? r.cutoff_at : sort.key === "price" ? r.price?.sale_minor ?? 0 : r.updated_at;
+    sort.key === "name" ? r.name : sort.key === "available" ? r.available : sort.key === "cutoff" ? r.cutoff_at : sort.key === "price" ? r.price?.sale_minor ?? 0 : r.updated_at;
   const rows = all
     .filter((r) => `${r.name} ${r.sku} ${r.category}`.toLowerCase().includes(query.toLowerCase()))
     .filter((r) => view === "all" || (view === "attention" ? needsAttention(r) : r.status !== "active"))
@@ -297,11 +297,12 @@ export function Inventory() {
                     Edit
                   </Button>
                 </Stack>
-                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 1.25 }}>
-                  <AvailabilityChip row={r} />
-                  <VerificationChip status={r.allergens.status} prefix />
-                  {r.stale ? <StatusChip tone="warning" label="Stale count" /> : null}
-                </Stack>
+                {r.availability_status !== "available" || r.stale ? (
+                  <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 1.25 }}>
+                    <AvailabilityFlag row={r} />
+                    {r.stale ? <StatusChip tone="warning" label="Stale count" /> : null}
+                  </Stack>
+                ) : null}
                 <Box component="dl" sx={{ m: 0, mt: 1.5, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", columnGap: 2, rowGap: 1.5 }}>
                   <Fact label="Available">
                     <AvailableCell row={r} />
@@ -321,21 +322,33 @@ export function Inventory() {
                     </Typography>
                   </Fact>
                 </Box>
-                <AllergenText allergens={r.allergens} />
+                <Box sx={{ mt: 1.5 }}>
+                  <AllergenSummary allergens={r.allergens} />
+                </Box>
               </Box>
             ))}
           </Box>
         ) : (
           <Box sx={{ overflowX: "auto", position: "relative" }}>
-            <Table size="small" sx={{ minWidth: 900, "& th, & td": { px: 1 }, "& tbody td": { py: 1.5 }, "& tbody tr:last-of-type td": { borderBottom: 0 } }}>
+            {/* Quiet by default: one value per cell, and chips only for things that need a look. */}
+            <Table
+              size="small"
+              sx={{
+                minWidth: 900,
+                "& th, & td": { px: 1.25, verticalAlign: "middle" },
+                "& th:first-of-type, & td:first-of-type": { pl: { xs: 2, sm: 2.5 } },
+                "& th:last-of-type, & td:last-of-type": { pr: { xs: 2, sm: 2.5 } },
+                "& tbody td": { py: 1.25 },
+                "& tbody tr:last-of-type td": { borderBottom: 0 },
+              }}
+            >
               <caption className="sr-only">Surplus inventory. Column headers sort the table.</caption>
               <TableHead>
                 <TableRow>
                   {sortCell("name", "Product")}
-                  {sortCell("available", "Available")}
-                  {sortCell("surplus", "Listed")}
-                  {sortCell("cutoff", "Cutoff")}
+                  {sortCell("available", "Stock")}
                   {sortCell("price", "Price")}
+                  {sortCell("cutoff", "Cutoff")}
                   <TableCell>Allergens</TableCell>
                   {sortCell("updated", "Updated")}
                   <TableCell align="right">
@@ -348,46 +361,41 @@ export function Inventory() {
                   <TableRow key={r.product_id} hover sx={r.status !== "active" ? { bgcolor: "rgba(27, 42, 35, 0.04)" } : undefined}>
                     <TableCell>
                       <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-                        <ProductImage image={r.image} size="sm" sx={{ width: 52, height: 46 }} />
-                        <Box sx={{ minWidth: 120 }}>
+                        <ProductImage image={r.image} size="sm" sx={{ width: 40, height: 40, flexShrink: 0 }} />
+                        <Box sx={{ minWidth: 130 }}>
                           <Typography variant="subtitle2" component="p" sx={{ fontWeight: 700, lineHeight: 1.3 }}>
                             {r.name}
                           </Typography>
                           <Typography variant="caption" color="text.secondary" component="p">
                             {r.sku} · {r.category}
                           </Typography>
-                          <Box sx={{ mt: 0.5 }}>
-                            <AvailabilityChip row={r} />
-                          </Box>
                         </Box>
+                        <AvailabilityFlag row={r} />
                       </Stack>
                     </TableCell>
                     <TableCell>
-                      <AvailableCell row={r} />
-                    </TableCell>
-                    <TableCell>
+                      {/* The stepper sets units listed; the line under it is what can still be sold. */}
                       <SurplusStepper row={r} onAdjust={(delta) => adjust(r, delta)} error={rowError[r.product_id]} />
+                      <Typography variant="caption" color="text.secondary" component="p" className="tabular" sx={{ mt: 0.5, maxWidth: 140 }}>
+                        {[`${r.available} available`, stockDetail(r)].filter(Boolean).join(" · ")}
+                      </Typography>
                     </TableCell>
-                    <TableCell sx={{ whiteSpace: "nowrap" }}>{r.cutoff_label}</TableCell>
                     <TableCell>
                       <PriceCell row={r} />
                     </TableCell>
-                    <TableCell>
-                      <Stack spacing={0.5} sx={{ alignItems: "flex-start", maxWidth: 200 }}>
-                        <VerificationChip status={r.allergens.status} />
-                        <AllergenText allergens={r.allergens} dense />
-                      </Stack>
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>{r.cutoff_label}</TableCell>
+                    <TableCell sx={{ minWidth: 200, maxWidth: 300 }}>
+                      <AllergenSummary allergens={r.allergens} />
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" sx={{ whiteSpace: "nowrap" }}>
-                        {ago(r.updated_at)}
-                      </Typography>
-                      {r.stale ? <StatusChip tone="warning" label="Stale count" sx={{ mt: 0.5 }} /> : null}
+                      <UpdatedLabel row={r} />
                     </TableCell>
                     <TableCell align="right">
-                      <Button size="small" variant="outlined" color="inherit" startIcon={<EditRounded />} onClick={() => setEditing(r)} aria-label={`Edit ${r.name}`}>
-                        Edit
-                      </Button>
+                      <Tooltip title="Edit">
+                        <IconButton size="small" onClick={() => setEditing(r)} aria-label={`Edit ${r.name}`}>
+                          <EditRounded fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -443,20 +451,28 @@ function AvailabilityChip({ row }: { row: InventoryRow }) {
   return <StatusChip tone={s.tone} icon={s.icon} label={s.label} />;
 }
 
-function VerificationChip({ status, prefix }: { status: string; prefix?: boolean }) {
-  const v = VERIFICATION[status] ?? VERIFICATION.missing;
-  return <StatusChip tone={v.tone} icon={v.icon} label={prefix ? `Allergens ${v.label.toLowerCase()}` : v.label} />;
+/** Only shown when the listing isn't simply on sale. */
+function AvailabilityFlag({ row }: { row: InventoryRow }) {
+  return row.availability_status === "available" ? null : <AvailabilityChip row={row} />;
 }
 
-function AllergenText({ allergens, dense }: { allergens: Allergens; dense?: boolean }) {
+/** Verified data gets a small check; anything else gets a chip, since it hides the item from strict-allergy shoppers. */
+function AllergenSummary({ allergens }: { allergens: Allergens }) {
+  const v = VERIFICATION[allergens.status] ?? VERIFICATION.missing;
+  const verified = allergens.status === "verified";
+  const contains = allergenList(allergens.contains);
   return (
-    <Box sx={{ mt: dense ? 0 : 1.25 }}>
-      <Typography variant="caption" color="text.secondary" component="p">
-        {allergens.contains.length ? `Contains ${allergenList(allergens.contains)}` : "No listed allergens"}
+    <Box>
+      {verified ? null : <StatusChip tone={v.tone} icon={v.icon} label={`Allergens ${v.label.toLowerCase()}`} sx={{ mb: 0.5 }} />}
+      <Typography variant="body2" component="p" sx={{ display: "flex", gap: 0.5, lineHeight: 1.4 }}>
+        {verified ? <VerifiedRounded aria-hidden sx={{ fontSize: 16, mt: "2px", flexShrink: 0, color: tones.success.fg }} /> : null}
+        <span>
+          {verified ? <span className="sr-only">Verified. </span> : null}
+          {contains ? contains.charAt(0).toUpperCase() + contains.slice(1) : "No listed allergens"}
+        </span>
       </Typography>
       {allergens.cross_contact.length ? (
-        <Typography variant="caption" component="p" sx={{ color: tones.warning.fg, fontWeight: 650, display: "flex", gap: 0.5 }}>
-          <WarningAmberRounded aria-hidden sx={{ fontSize: 14, mt: "2px", flexShrink: 0 }} />
+        <Typography variant="caption" component="p" sx={{ color: tones.warning.fg, fontWeight: 650 }}>
           May contain {allergenList(allergens.cross_contact)}
         </Typography>
       ) : null}
@@ -464,30 +480,49 @@ function AllergenText({ allergens, dense }: { allergens: Allergens; dense?: bool
   );
 }
 
-function AvailableCell({ row }: { row: InventoryRow }) {
-  const share = row.surplus ? Math.min(100, Math.round((row.available / row.surplus) * 100)) : 0;
+function UpdatedLabel({ row }: { row: InventoryRow }) {
+  if (!row.stale) {
+    return (
+      <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
+        {ago(row.updated_at)}
+      </Typography>
+    );
+  }
   return (
-    <Box sx={{ minWidth: 92 }}>
-      <Typography component="p" className="tabular" sx={{ fontWeight: 800, fontSize: "1.15rem", lineHeight: 1.2 }}>
+    <Tooltip title="Count hasn't been updated in a while. Recount this item.">
+      <Typography variant="body2" sx={{ whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 0.5, color: tones.warning.fg, fontWeight: 650 }}>
+        <WarningAmberRounded aria-hidden sx={{ fontSize: 16 }} />
+        {ago(row.updated_at)}
+        <span className="sr-only">, stale count</span>
+      </Typography>
+    </Tooltip>
+  );
+}
+
+/** Units that aren't free to sell, e.g. "2 held · 1 paid"; empty when there are none. */
+function stockDetail(row: InventoryRow): string {
+  return [row.reserved ? `${row.reserved} held` : "", row.committed ? `${row.committed} paid` : "", row.buffer ? `${row.buffer} buffer` : ""].filter(Boolean).join(" · ");
+}
+
+function AvailableCell({ row }: { row: InventoryRow }) {
+  const detail = stockDetail(row);
+  return (
+    <Box>
+      <Typography component="p" className="tabular" sx={{ fontWeight: 800, fontSize: "1.05rem", lineHeight: 1.3 }}>
         {row.available}
       </Typography>
-      <LinearProgress
-        variant="determinate"
-        value={share}
-        aria-label={`${row.name}: ${row.available} of ${row.surplus} listed units available`}
-        sx={{ height: 4, my: 0.75, maxWidth: 88 }}
-      />
-      <Typography variant="caption" color="text.secondary" component="p" className="tabular" sx={{ whiteSpace: "nowrap" }}>
-        {row.reserved} held · {row.committed} paid
-        {row.buffer ? ` · ${row.buffer} buffer` : ""}
-      </Typography>
+      {detail ? (
+        <Typography variant="caption" color="text.secondary" component="p" className="tabular" sx={{ whiteSpace: "nowrap" }}>
+          {detail}
+        </Typography>
+      ) : null}
     </Box>
   );
 }
 
 function SurplusStepper({ row, onAdjust, error }: { row: InventoryRow; onAdjust: (delta: 1 | -1) => void; error?: string }) {
   const held = row.reserved + row.committed;
-  const control = { ...surface.raisedSm, width: 34, height: 34, borderRadius: "50%", "&.Mui-disabled": { boxShadow: "none" } };
+  const control = { ...surface.raisedSm, width: 30, height: 30, borderRadius: "50%", "&.Mui-disabled": { boxShadow: "none" } };
   return (
     <Box>
       <Stack direction="row" spacing={0.5} role="group" aria-label={`Surplus for ${row.name}`} sx={{ alignItems: "center" }}>
@@ -525,15 +560,16 @@ function PriceCell({ row }: { row: InventoryRow }) {
     <Box>
       <Typography component="p" className="tabular" sx={{ fontWeight: 700, whiteSpace: "nowrap" }}>
         {money(sale_minor, currency)}
-        {off ? (
-          <Box component="span" sx={{ ml: 0.75, fontSize: "0.75rem", fontWeight: 700, color: brand.leafDark }}>
+      </Typography>
+      {off ? (
+        <Typography variant="caption" color="text.secondary" component="p" className="tabular" sx={{ whiteSpace: "nowrap" }}>
+          <span className="sr-only">Regular price </span>
+          <s>{money(reference_minor, currency)}</s>
+          <Box component="span" sx={{ ml: 0.75, fontWeight: 700, color: brand.leafDark }}>
             −{off}%
           </Box>
-        ) : null}
-      </Typography>
-      <Typography variant="caption" color="text.secondary" component="p" className="tabular" sx={{ whiteSpace: "nowrap" }}>
-        Regular {money(reference_minor, currency)}
-      </Typography>
+        </Typography>
+      ) : null}
     </Box>
   );
 }

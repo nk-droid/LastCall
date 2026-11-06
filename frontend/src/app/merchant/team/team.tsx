@@ -92,7 +92,7 @@ export function TeamPage() {
       ) : !t ? (
         <LoadingBlock label="Loading the team" />
       ) : (
-        <Stack spacing={3} sx={{ maxWidth: 980 }}>
+        <Stack spacing={3}>
           {error ? <Alert severity="error" role="alert">{error}</Alert> : null}
           {shared ? <CopyLink {...shared} /> : null}
 
@@ -109,14 +109,14 @@ export function TeamPage() {
           </SectionCard>
 
           <SectionCard title="Members" icon={<GroupsRounded />} action={<StatusChip tone="neutral" label={`${t.members.length} people`} />}>
-            <Box sx={{ overflowX: "auto", mx: { xs: -2, sm: -2.5 } }}>
+            <Box sx={{ overflowX: "auto", mx: { xs: -2.5, sm: -3 } }}>
               <Table size="small" sx={{ minWidth: 640 }}>
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ pl: { xs: 2, sm: 2.5 } }}>Name</TableCell>
+                    <TableCell sx={{ pl: { xs: 2.5, sm: 3 } }}>Name</TableCell>
                     <TableCell>Role</TableCell>
                     <TableCell>Last sign-in</TableCell>
-                    <TableCell align="right" sx={{ pr: { xs: 2, sm: 2.5 } }}><span className="sr-only">Actions</span></TableCell>
+                    <TableCell align="right" sx={{ pr: { xs: 2.5, sm: 3 } }}><span className="sr-only">Actions</span></TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -125,7 +125,7 @@ export function TeamPage() {
                     const canRemove = !you && t.assignable_roles.includes(m.role);
                     return (
                       <TableRow key={m.membership_id} hover>
-                        <TableCell sx={{ pl: { xs: 2, sm: 2.5 } }}>
+                        <TableCell sx={{ pl: { xs: 2.5, sm: 3 } }}>
                           <Typography variant="body2" sx={{ fontWeight: 650 }}>{m.name}{you ? " (you)" : ""}</Typography>
                           <Typography variant="caption" color="text.secondary">{m.email}</Typography>
                         </TableCell>
@@ -142,7 +142,7 @@ export function TeamPage() {
                           )}
                         </TableCell>
                         <TableCell><Typography variant="body2" color="text.secondary">{m.last_login_at ? ago(m.last_login_at) : "Never"}</Typography></TableCell>
-                        <TableCell align="right" sx={{ pr: { xs: 2, sm: 2.5 }, whiteSpace: "nowrap" }}>
+                        <TableCell align="right" sx={{ pr: { xs: 2.5, sm: 3 }, whiteSpace: "nowrap" }}>
                           {owner && !you ? (
                             <Tooltip title="Create a password reset link">
                               <IconButton aria-label={`Password reset link for ${m.name}`} onClick={() => run(`reset-${m.membership_id}`,

@@ -73,7 +73,7 @@ export function Setup() {
   };
 
   return (
-    <Box sx={{ maxWidth: 980 }}>
+    <Box>
       <PageHeader eyebrow={s.shop.name} title="Set up your shop" subtitle="Finish each step, then send your shop for a quick review before it goes live." />
 
       {status === "pending_review" ? (

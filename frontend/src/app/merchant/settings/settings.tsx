@@ -51,7 +51,7 @@ export function SettingsPage() {
       ) : !s ? (
         <LoadingBlock label="Loading settings" slow={settings.slow} />
       ) : (
-        <Box sx={{ maxWidth: 980 }}>
+        <Box>
           {tab === "profile" ? <ProfileSection key={s.shop.id} settings={s} onSaved={onSaved} /> : null}
           {tab === "pickup" ? (
             <Stack spacing={3}>
