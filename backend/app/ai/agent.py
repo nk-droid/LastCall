@@ -90,6 +90,8 @@ def run_agent(
     state: dict[str, Any] | None = None,
     max_steps: int | None = None,
     timeout: float | None = None,
+    turn_timeout: float = 30.0,
+    think: str | bool | None = None,
     on_step: Callable[[str], None] | None = None,
 ) -> AgentResult:
     s = settings()
@@ -121,7 +123,7 @@ def run_agent(
                 return _end(run_id, "timeout", started, totals, ctx, error="time budget used up")
             turn_started = time.perf_counter()
             try:
-                turn = provider.chat(convo, specs, min(remaining, 30.0), kind)
+                turn = provider.chat(convo, specs, min(remaining, turn_timeout), kind, think)
             except ProviderFailure as exc:
                 _invocation(kind, prompt_version, provider, convo, "timeout" if exc.kind == "timeout" else "error", str(exc), turn_started, None, run_id)
                 status = "timeout" if exc.kind == "timeout" else "error"

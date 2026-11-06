@@ -69,7 +69,8 @@ class LLMProvider(Protocol):
 
     def complete(self, messages: list[dict[str, str]], schema: dict[str, Any], timeout: float, task: str) -> Completion: ...
 
-    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], timeout: float, task: str) -> AgentTurn: ...
+    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], timeout: float, task: str,
+             think: str | bool | None = None) -> AgentTurn: ...
 
 
 class OllamaProvider:
@@ -89,21 +90,23 @@ class OllamaProvider:
         self.think = think
         self._api_key = api_key
         self._client_kwargs = client_kwargs or {}  # extra httpx client options (e.g. a proxy or a test transport)
-        self._chats: dict[float, ChatOllama] = {}
+        self._chats: dict[tuple[float, Any], ChatOllama] = {}
         self._lock = threading.Lock()
 
-    def _chat(self, timeout: float) -> ChatOllama:
+    def _chat(self, timeout: float, think: str | bool | None = None) -> ChatOllama:
+        """``think`` overrides the model's thinking level for this call (e.g. "low" or False); None keeps the default."""
+        key = (timeout, think)
         with self._lock:
-            if timeout not in self._chats:
+            if key not in self._chats:
                 headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
-                self._chats[timeout] = ChatOllama(
+                self._chats[key] = ChatOllama(
                     model=self.model,
                     base_url=self.host,
                     temperature=0,
-                    reasoning=self.think if "gpt-oss" in self.model else None,
+                    reasoning=think if think is not None else (self.think if "gpt-oss" in self.model else None),
                     client_kwargs={**self._client_kwargs, "headers": headers, "timeout": httpx.Timeout(timeout, connect=5.0)},
                 )
-            return self._chats[timeout]
+            return self._chats[key]
 
     def complete(self, messages: list[dict[str, str]], schema: dict[str, Any], timeout: float, task: str) -> Completion:
         chat = [_MESSAGE_TYPES[m["role"]](content=m["content"]) for m in messages]
@@ -118,10 +121,11 @@ class OllamaProvider:
         usage = reply.usage_metadata or {}
         return Completion(text=str(reply.content), input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"))
 
-    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], timeout: float, task: str) -> AgentTurn:
+    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], timeout: float, task: str,
+             think: str | bool | None = None) -> AgentTurn:
         """One tool-calling turn (native Ollama tool calls through LangChain's bind_tools)."""
         try:
-            reply = self._chat(timeout).bind_tools(tools).invoke([_to_langchain(m) for m in messages], stream=False)
+            reply = self._chat(timeout, think).bind_tools(tools).invoke([_to_langchain(m) for m in messages], stream=False)
         except httpx.TimeoutException as exc:
             raise ProviderFailure("timeout", f"model call timed out after {timeout}s") from exc
         except ResponseError as exc:
@@ -172,10 +176,11 @@ class FixtureProvider:
         text = reply if isinstance(reply, str) else json.dumps(reply)
         return Completion(text=text, input_tokens=10, output_tokens=10)
 
-    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], timeout: float, task: str) -> AgentTurn:
+    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], timeout: float, task: str,
+             think: str | bool | None = None) -> AgentTurn:
         """Replies are queued per task: ``{"tool_calls": [{"name": ..., "args": {...}}]}``, ``{"text": ...}``,
         a plain string, an exception, or a callable that receives the messages so far and returns one of those."""
-        self.calls.append({"task": task, "messages": list(messages), "tools": [t["function"]["name"] for t in tools]})
+        self.calls.append({"task": task, "messages": list(messages), "tools": [t["function"]["name"] for t in tools], "think": think})
         queue = self.replies.get(task) or []
         if not queue:
             raise ProviderFailure("unavailable", f"no fixture reply queued for {task}")

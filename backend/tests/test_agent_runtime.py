@@ -214,6 +214,21 @@ def test_the_ollama_adapter_sends_tools_and_reads_native_tool_calls():
     assert (turn.input_tokens, turn.output_tokens) == (50, 9)
 
 
+def test_the_ollama_adapter_can_lower_the_thinking_level_per_call():
+    seen: list = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"model": "beam", "created_at": "2026-11-07T10:00:00Z", "done": True, "done_reason": "stop",
+                                         "message": {"role": "assistant", "content": "ok"}})
+
+    beam = OllamaProvider("https://ollama.com", "beam", "low", "test-key", client_kwargs={"transport": httpx.MockTransport(handler)})
+    messages = [{"role": "user", "content": "hi"}]
+    beam.chat(messages, [t.spec() for t in _tools()], 10, TASK, think="low")
+    beam.chat(messages, [t.spec() for t in _tools()], 10, TASK)
+    assert seen[0].get("think") == "low" and "think" not in seen[1]
+
+
 def test_ops_lists_agent_runs_with_their_steps(fixture_llm, app):
     fixture_llm.queue(TASK, call("add", a=2, b=3), call("answer", value=5))
     result = _run(tools=_tools())
