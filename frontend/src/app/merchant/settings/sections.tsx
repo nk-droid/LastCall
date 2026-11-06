@@ -346,6 +346,7 @@ export function PoliciesSection({ settings, onSaved, onConfirm }: { settings: Sh
     cancellation_cutoff_minutes: p.cancellation_cutoff_minutes, reservation_ttl_minutes: Math.round(p.reservation_ttl_seconds / 60),
     max_units_per_order: p.max_units_per_order, low_stock_threshold: p.low_stock_threshold, no_show_grace_minutes: p.no_show_grace_minutes,
     no_show_policy: p.no_show_policy, relist_at_local: p.relist_at_local ?? "06:00",
+    closeout_enabled: p.closeout_enabled ?? true, closeout_lead_minutes: p.closeout_lead_minutes ?? 60,
   });
   const [money, setMoney] = useState({ tax_percent: ((p.tax_rates_bps?.bakery ?? 0) / 100).toString(), fee: (p.fees_minor / 100).toFixed(2) });
   const textSave = useSave(onSaved);
@@ -417,6 +418,15 @@ export function PoliciesSection({ settings, onSaved, onConfirm }: { settings: Sh
           <Grid size={{ xs: 12, sm: 6, md: 4 }}>
             <TextField type="time" label="Daily listing time" fullWidth value={rules.relist_at_local} onChange={num("relist_at_local")} disabled={disabled}
               helperText={`“Repeat daily” products are re-listed at ${hhmmLabel(rules.relist_at_local)}`} slotProps={{ inputLabel: { shrink: true } }} />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+            <TextField type="number" label="Close-out plan (minutes before pickup ends)" fullWidth value={rules.closeout_lead_minutes}
+              onChange={num("closeout_lead_minutes")} disabled={disabled || !rules.closeout_enabled} slotProps={{ htmlInput: { min: 15, max: 240, step: 15 } }}
+              error={!!ruleSave.fields.closeout_lead_minutes} helperText={ruleSave.fields.closeout_lead_minutes ?? "Suggested price cuts and slot changes; a manager applies them"} />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 4 }} sx={{ display: "flex", alignItems: "flex-start", pt: { md: 1 } }}>
+            <FormControlLabel control={<Switch checked={rules.closeout_enabled} disabled={disabled}
+              onChange={(e) => setRules((r) => ({ ...r, closeout_enabled: e.target.checked }))} />} label="Close-out assistant" />
           </Grid>
         </Grid>
         {settings.can_edit ? (

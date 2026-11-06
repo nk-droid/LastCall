@@ -7,6 +7,7 @@ import { signInHref, useAccount } from "@/components/account";
 import { FormError, FormStack, PasswordField } from "@/components/auth";
 import { PageShell } from "@/components/site";
 import { EmptyState, LoadingBlock, PageHeader } from "@/components/ui";
+import { WatchList } from "@/components/watches";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import type { Account } from "@/lib/types";
 
@@ -25,6 +26,7 @@ export function AccountSettings() {
     <PageShell width="narrow">
       <PageHeader title="Account settings" subtitle={user.email} />
       <Stack spacing={3}>
+        <WatchList />
         <Profile key={user.id} name={user.name} phone={user.phone} onSaved={refresh} />
         <ChangePassword />
       </Stack>

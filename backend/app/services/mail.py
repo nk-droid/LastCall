@@ -92,6 +92,14 @@ def render(template: str, ctx: dict[str, Any], link: str | None) -> Rendered:
         lines = [f"Hi {ctx['name']}, PayPal has completed your refund of {ctx['refund']} for order {ctx['order_number']} at {ctx['shop']}.",
                  "It goes back to the payment method you used with PayPal."]
         return Rendered(f"Refund of {ctx['refund']} completed", "\n\n".join([*lines, link or ""]), _html(lines, ("View your order", link or "")))
+    if template == "watch_match":
+        lines = [f"Hi {ctx['name']}, {ctx['shop']} just listed a bundle that fits what you asked us to watch for:", f"“{ctx['request']}”",
+                 f"{ctx['label']}: {', '.join(ctx['items'])}", f"{ctx['total']} · pickup {ctx['pickup']}",
+                 *([ctx["summary"]] if ctx.get("summary") else []),
+                 "It isn't held until you tap below, so it may be gone by then. Your allergen choices are checked again when you open it.",
+                 f"Stop watching for this: {ctx['stop_link']}"]
+        return Rendered(f"Found at {ctx['shop']}: {ctx['label']} for {ctx['total']}", "\n\n".join([*lines, link or ""]),
+                        _html(lines, ("Hold this bundle", link or "")))
     raise ValueError(f"unknown email template {template}")
 
 

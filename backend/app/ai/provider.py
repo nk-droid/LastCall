@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import httpx
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_ollama import ChatOllama
 from ollama import ResponseError
 from pydantic import BaseModel, ValidationError
@@ -46,11 +46,31 @@ class Completion:
     output_tokens: int | None = None
 
 
+@dataclass
+class ToolCall:
+    id: str
+    name: str
+    args: dict[str, Any]
+
+
+@dataclass
+class AgentTurn:
+    """One model turn of an agent run: tool calls to make, or a plain-text reply."""
+
+    text: str = ""
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+
+
 class LLMProvider(Protocol):
     name: str
     model: str
 
     def complete(self, messages: list[dict[str, str]], schema: dict[str, Any], timeout: float, task: str) -> Completion: ...
+
+    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], timeout: float, task: str,
+             think: str | bool | None = None) -> AgentTurn: ...
 
 
 class OllamaProvider:
@@ -70,21 +90,23 @@ class OllamaProvider:
         self.think = think
         self._api_key = api_key
         self._client_kwargs = client_kwargs or {}  # extra httpx client options (e.g. a proxy or a test transport)
-        self._chats: dict[float, ChatOllama] = {}
+        self._chats: dict[tuple[float, Any], ChatOllama] = {}
         self._lock = threading.Lock()
 
-    def _chat(self, timeout: float) -> ChatOllama:
+    def _chat(self, timeout: float, think: str | bool | None = None) -> ChatOllama:
+        """``think`` overrides the model's thinking level for this call (e.g. "low" or False); None keeps the default."""
+        key = (timeout, think)
         with self._lock:
-            if timeout not in self._chats:
+            if key not in self._chats:
                 headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
-                self._chats[timeout] = ChatOllama(
+                self._chats[key] = ChatOllama(
                     model=self.model,
                     base_url=self.host,
                     temperature=0,
-                    reasoning=self.think if "gpt-oss" in self.model else None,
+                    reasoning=think if think is not None else (self.think if "gpt-oss" in self.model else None),
                     client_kwargs={**self._client_kwargs, "headers": headers, "timeout": httpx.Timeout(timeout, connect=5.0)},
                 )
-            return self._chats[timeout]
+            return self._chats[key]
 
     def complete(self, messages: list[dict[str, str]], schema: dict[str, Any], timeout: float, task: str) -> Completion:
         chat = [_MESSAGE_TYPES[m["role"]](content=m["content"]) for m in messages]
@@ -99,8 +121,35 @@ class OllamaProvider:
         usage = reply.usage_metadata or {}
         return Completion(text=str(reply.content), input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"))
 
+    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], timeout: float, task: str,
+             think: str | bool | None = None) -> AgentTurn:
+        """One tool-calling turn (native Ollama tool calls through LangChain's bind_tools)."""
+        try:
+            reply = self._chat(timeout, think).bind_tools(tools).invoke([_to_langchain(m) for m in messages], stream=False)
+        except httpx.TimeoutException as exc:
+            raise ProviderFailure("timeout", f"model call timed out after {timeout}s") from exc
+        except ResponseError as exc:
+            raise ProviderFailure("http_error", f"Ollama returned {exc.status_code}: {str(exc.error)[:200]}") from exc
+        except (ConnectionError, httpx.HTTPError) as exc:
+            raise ProviderFailure("unavailable", f"Ollama unreachable at {self.host}: {exc.__class__.__name__}") from exc
+        usage = getattr(reply, "usage_metadata", None) or {}
+        calls = [ToolCall(id=str(tc.get("id") or new_id("call")), name=str(tc["name"]), args=dict(tc.get("args") or {}))
+                 for tc in (getattr(reply, "tool_calls", None) or [])]
+        return AgentTurn(text=str(reply.content or ""), tool_calls=calls, input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"))
+
 
 _MESSAGE_TYPES = {"system": SystemMessage, "user": HumanMessage, "assistant": AIMessage}
+
+
+def _to_langchain(message: dict[str, Any]) -> BaseMessage:
+    role = message["role"]
+    if role == "tool":
+        return ToolMessage(content=message["content"], tool_call_id=message["tool_call_id"])
+    if role == "assistant" and message.get("tool_calls"):
+        return AIMessage(content=message.get("content") or "", tool_calls=[
+            {"id": tc["id"], "name": tc["name"], "args": tc["args"], "type": "tool_call"} for tc in message["tool_calls"]
+        ])
+    return _MESSAGE_TYPES[role](content=message.get("content") or "")
 
 
 class FixtureProvider:
@@ -127,6 +176,24 @@ class FixtureProvider:
         text = reply if isinstance(reply, str) else json.dumps(reply)
         return Completion(text=text, input_tokens=10, output_tokens=10)
 
+    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], timeout: float, task: str,
+             think: str | bool | None = None) -> AgentTurn:
+        """Replies are queued per task: ``{"tool_calls": [{"name": ..., "args": {...}}]}``, ``{"text": ...}``,
+        a plain string, an exception, or a callable that receives the messages so far and returns one of those."""
+        self.calls.append({"task": task, "messages": list(messages), "tools": [t["function"]["name"] for t in tools], "think": think})
+        queue = self.replies.get(task) or []
+        if not queue:
+            raise ProviderFailure("unavailable", f"no fixture reply queued for {task}")
+        reply = queue.pop(0)
+        if callable(reply):
+            reply = reply(messages)
+        if isinstance(reply, Exception):
+            raise reply
+        if isinstance(reply, str):
+            return AgentTurn(text=reply, input_tokens=10, output_tokens=10)
+        calls = [ToolCall(id=c.get("id") or new_id("call"), name=c["name"], args=c.get("args", {})) for c in reply.get("tool_calls", [])]
+        return AgentTurn(text=reply.get("text", ""), tool_calls=calls, input_tokens=10, output_tokens=10)
+
 
 _provider_lock = threading.Lock()
 _provider_override: dict[str, LLMProvider | None] = {}
@@ -152,6 +219,20 @@ def get_provider() -> LLMProvider | None:
         key = f"{s.ollama_host}|{s.llm_model}|{s.llm_think}|{s.ollama_api_key}"
         if key not in _cached:
             _cached[key] = OllamaProvider(s.ollama_host, s.llm_model, s.llm_think, s.ollama_api_key)
+        return _cached[key]
+
+
+def get_agent_provider() -> LLMProvider | None:
+    """The model that drives agents (``AGENT_MODEL``, default "beam"), on the same host and key as everything else."""
+    if "p" in _provider_override:
+        return _provider_override["p"]
+    s = settings()
+    if s.llm_provider == "none" or missing_api_key():
+        return None
+    with _provider_lock:
+        key = f"agent|{s.ollama_host}|{s.agent_model}|{s.ollama_api_key}"
+        if key not in _cached:
+            _cached[key] = OllamaProvider(s.ollama_host, s.agent_model, s.llm_think, s.ollama_api_key)
         return _cached[key]
 
 
@@ -238,7 +319,8 @@ def extract_json(text: str) -> Any:
 
 
 def _record(task: str, prompt_version: str, provider: str, model: str, input_hash: str, result: str,
-            reason: str | None, latency_ms: int, tokens: tuple[int | None, int | None], repaired: bool, fallback: bool) -> str:
+            reason: str | None, latency_ms: int, tokens: tuple[int | None, int | None], repaired: bool, fallback: bool,
+            agent_run_id: str | None = None) -> str:
     inv_id = new_id("ai")
     try:
         with transaction() as db:
@@ -257,6 +339,7 @@ def _record(task: str, prompt_version: str, provider: str, model: str, input_has
                     output_tokens=tokens[1],
                     repaired=repaired,
                     fallback_used=fallback,
+                    agent_run_id=agent_run_id,
                 )
             )
     except Exception:  # logging must never break the customer flow

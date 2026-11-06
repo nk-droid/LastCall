@@ -8,6 +8,7 @@ recorded deterministic score; there is no hidden "AI confidence".
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -201,15 +202,26 @@ def _no_match(intent: Intent, items: list[CatalogItem], checks: list[ItemCheck],
     return {"headline": reasons[0] if reasons else "No bundle fits your request right now.", "reasons": reasons, "suggestions": suggestions}
 
 
-def propose(intent_id: str, session_id: str) -> dict[str, Any]:
+@dataclass
+class _Plan:
+    merchant: Merchant
+    now: datetime
+    bookable: list[PickupSlot]
+    window_slots: list[PickupSlot]
+    items: list[CatalogItem]
+    checks: list[ItemCheck]
+    checks_by_sku: dict[str, ItemCheck]
+    eligible: list[CatalogItem]
+    ctx: PlanContext
+    weights: dict[str, float]
+    scored: list[ScoredBundle]
+    chosen: list[tuple[str, str, ScoredBundle]]
+
+
+def _plan(merchant_id: str, intent: Intent) -> _Plan:
+    """Filter, enumerate, score and pick: the deterministic core shared by proposals and watches."""
     with transaction() as db:
-        ci = db.get(CustomerIntent, intent_id)
-        if ci is None or ci.session_id != session_id:
-            raise NotFound("We couldn't find that request; please describe it again", code="intent_missing")
-        merchant = merchant_by_id(db, ci.merchant_id)
-        intent = Intent.model_validate(ci.structured_constraints)
-        if intent.party_size is None:
-            raise Unprocessable("Tell us how many people you're shopping for", code="party_size_required")
+        merchant = merchant_by_id(db, merchant_id)
         now = clock.now()
         pickup.ensure_slots(db, merchant, now)
         slots = pickup.list_slots(db, merchant, now)
@@ -222,17 +234,44 @@ def propose(intent_id: str, session_id: str) -> dict[str, Any]:
     target_end = window_slots[0].ends_at if window_slots else None
     tz_label = lambda dt: clock.display_time(dt, merchant.timezone)  # noqa: E731
     checks = check_items(items, intent, target_end, tz_label)
-    checks_by_sku = {c.item.sku: c for c in checks}
     eligible = [c.item for c in checks if c.eligible] if window_slots else []
     ctx = PlanContext.build(intent, int(policy(merchant, "max_units_per_order", 12)))
     weights = dict(policy(merchant, "scoring_weights", DEFAULT_WEIGHTS))
     scored = [score_lines(lines, intent, ctx, weights, now) for lines in enumerate_bundles(eligible, ctx)]
-    chosen = select_options(scored)
+    return _Plan(merchant=merchant, now=now, bookable=bookable, window_slots=window_slots, items=items, checks=checks,
+                 checks_by_sku={c.item.sku: c for c in checks}, eligible=eligible, ctx=ctx, weights=weights, scored=scored,
+                 chosen=select_options(scored))
+
+
+def code_options(merchant_id: str, intent: Intent) -> list[dict[str, Any]]:
+    """The options ``propose`` would show, without saving a proposal or calling a model (used by watches)."""
+    p = _plan(merchant_id, intent)
+    views = [_option_view(kind, label, sb, intent, p.merchant, p.window_slots, p.checks_by_sku, p.now, idx,
+                          {"text": _rules_rationale(kind, sb, intent), "source": "rules"})
+             for idx, (kind, label, sb) in enumerate(p.chosen, start=1)]
+    return [v for v in views if v["default_slot_id"]]
+
+
+def propose(intent_id: str, session_id: str, *, ai_rationale: bool = True) -> dict[str, Any]:
+    """Bundle options for a parsed intent. ``ai_rationale=False`` skips the L2 model pass (the concierge
+    agent writes its own explanation), leaving the code-built options and rules rationales unchanged."""
+    with transaction() as db:
+        ci = db.get(CustomerIntent, intent_id)
+        if ci is None or ci.session_id != session_id:
+            raise NotFound("We couldn't find that request; please describe it again", code="intent_missing")
+        merchant_id = ci.merchant_id
+        intent = Intent.model_validate(ci.structured_constraints)
+        if intent.party_size is None:
+            raise Unprocessable("Tell us how many people you're shopping for", code="party_size_required")
+
+    p = _plan(merchant_id, intent)
+    merchant, now, bookable, window_slots, items = p.merchant, p.now, p.bookable, p.window_slots, p.items
+    checks, checks_by_sku, eligible, ctx, weights, scored, chosen = p.checks, p.checks_by_sku, p.eligible, p.ctx, p.weights, p.scored, p.chosen
 
     ai_meta: dict[str, Any] = {"used": False}
     rationales: dict[str, dict[str, str]] = {}
     ai_invocation_id = None
-    if chosen and settings().ai_bundle_rationale:
+    if chosen and ai_rationale and settings().ai_bundle_rationale:
         chosen, rationales, ai_meta, ai_invocation_id = _ai_pass(chosen, scored, eligible, intent, ctx, weights, merchant, now)
 
     options = []

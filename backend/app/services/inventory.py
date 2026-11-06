@@ -174,6 +174,8 @@ def update_inventory(user: StaffContext, upd: InventoryUpdate) -> dict[str, Any]
         db.add(InventoryEvent(merchant_id=merchant.id, product_id=product.id, sku=product.sku, event_type=event_type or upd.action.upper(),
                               delta=delta, surplus_before=before, surplus_after=lot.surplus_qty, actor=user.actor,
                               reason=upd.reason or upd.action.replace("_", " "), created_at=now))
+        if event_type in ("LISTED", "RESUMED"):  # new stock may fit a shopper's watch
+            jobs.enqueue("watches.scan", {"merchant_id": merchant.id}, delay_seconds=15, dedupe_key=f"watches.scan:{merchant.id}", db=db)
         audit.record(db, actor=user.actor, actor_role=user.role, entity_type="product", entity_id=product.id,
                      action=f"inventory_{upd.action}", meta={"before": before, "after": lot.surplus_qty, "buffer": lot.buffer_qty,
                                                              "cutoff_at": clock.iso(lot.cutoff_at), "reason": upd.reason})
@@ -307,6 +309,7 @@ def create_product(user: StaffContext, data: NewProduct) -> dict[str, Any]:
                             updated_by=user.actor, updated_at=now))
         db.add(InventoryEvent(merchant_id=merchant.id, product_id=product.id, sku=data.sku, event_type="LISTED", delta=data.surplus,
                               surplus_before=0, surplus_after=data.surplus, actor=user.actor, reason="New product listed", created_at=now))
+        jobs.enqueue("watches.scan", {"merchant_id": merchant.id}, delay_seconds=15, dedupe_key=f"watches.scan:{merchant.id}", db=db)
         audit.record(db, actor=user.actor, actor_role=user.role, entity_type="product", entity_id=product.id, action="product_created", meta={"sku": data.sku})
         db.flush()
         return next(r for r in inventory_rows(db, merchant, now) if r["product_id"] == product.id)

@@ -26,6 +26,7 @@ import { Alert, Box, Button, Grid, IconButton, LinearProgress, Link, ListItemBut
 import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 
 import { useAnnounce } from "@/components/announcer";
+import { CloseoutCard } from "@/components/closeout-plan";
 import { SlotsTimeline, TimelineToggle, type TimelineView } from "@/components/pickup-timeline";
 import { ProductImage } from "@/components/product-image";
 import { FulfillmentPill, PaymentPill } from "@/components/status-pills";
@@ -133,6 +134,7 @@ export function Today() {
             <Box sx={{ display: { xs: "block", lg: "none" } }}>
               <NeedsAttention overview={o} onResolved={overview.reload} />
             </Box>
+            <CloseoutCard />
             <OrdersCard overview={o} />
             <SlotsCard slots={o.slots} />
             <QuickStock rows={o.top_surplus} onChanged={overview.reload} />

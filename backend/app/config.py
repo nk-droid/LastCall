@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     llm_think: Literal["low", "medium", "high"] = "low"
     llm_timeout_seconds: float = 20.0
     ai_bundle_rationale: bool = True
+    # Agents (tool-calling loops) use their own model on the same Ollama host and key. On the cloud API
+    # the name has no suffix ("beam"); through a local daemon it is "beam:cloud".
+    agent_model: str = "beam"
+    agent_max_steps: int = 8
+    agent_timeout_seconds: float = 45.0
 
     # Background worker (runs inside the API process unless disabled).
     worker_enabled: bool = True

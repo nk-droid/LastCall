@@ -518,6 +518,8 @@ export type ShopPolicies = {
   no_show_policy: "hold_for_review" | "auto_refund" | "auto_cancel_no_refund";
   no_show_grace_minutes: number;
   relist_at_local: string;
+  closeout_enabled?: boolean;
+  closeout_lead_minutes?: number;
   tax_rates_bps: Record<string, number>;
   fees_minor: number;
 };
@@ -545,3 +547,87 @@ export type ShopSettings = {
 export type TeamMember = { membership_id: string; user_id: string; name: string; email: string; role: Role; role_label: string; joined_at: string; last_login_at: string | null };
 export type TeamInvite = { id: string; email: string; role: Role; role_label: string; expires_at: string; created_at: string };
 export type Team = { members: TeamMember[]; invites: TeamInvite[]; assignable_roles: Role[]; you: string };
+
+// ----------------------------------------------------------------------------- shopping concierge (agent)
+
+export type ConciergeCard = {
+  option_id: string;
+  proposal_id: string;
+  option_key: string;
+  shop: { slug: string; name: string };
+  label: string;
+  kind: string;
+  lines: { name: string; qty: number; image: ImageRef | null }[];
+  units: number;
+  total_minor: number;
+  reference_minor: number;
+  discount_minor: number;
+  currency: string;
+  fits: FitEvidence[];
+  pickup_label: string | null;
+  default_slot_id: string | null;
+};
+
+export type ConciergeMessage = {
+  role: "user" | "assistant";
+  text: string;
+  at: string;
+  cards?: ConciergeCard[];
+  questions?: string[];
+  source?: "agent" | "rules" | "system";
+};
+
+export type Conversation = {
+  id: string;
+  status: "idle" | "working";
+  scope: { slug: string; name: string } | null;
+  messages: ConciergeMessage[];
+  progress: string[];
+};
+
+// ----------------------------------------------------------------------------- watch for me
+
+export type Watch = {
+  id: string;
+  request: string;
+  status: "active" | "paused" | "expired";
+  facts: string[];
+  shop: { slug: string; name: string } | null;
+  expires_at: string;
+  last_notified_at: string | null;
+  matches_sent: number;
+  created_at: string;
+};
+
+// ----------------------------------------------------------------------------- close-out plan (agent)
+
+export type CloseoutAction = {
+  id: string;
+  type: "adjust_surplus" | "lower_price" | "pause_listing" | "resume_listing" | "close_slot" | "reopen_slot" | "set_slot_capacity";
+  status: "proposed" | "applied" | "skipped" | "failed" | "dropped";
+  reason: string;
+  title?: string;
+  before?: string;
+  after?: string;
+  note?: string;
+};
+
+export type CloseoutPlan = {
+  id: string;
+  status: "pending" | "partly_applied" | "applied" | "dismissed" | "expired" | "superseded";
+  source: "agent" | "rules";
+  summary: string;
+  actions: CloseoutAction[];
+  created_by: string;
+  decided_by: string | null;
+  created_at: string;
+  expires_at: string;
+  expires_label: string;
+  run_id: string | null;
+};
+
+export type CloseoutState = {
+  plan: CloseoutPlan | null;
+  schedule: { enabled: boolean; lead_minutes: number; runs_at: string | null; runs_at_label: string | null; closes_at_label: string | null };
+  can_apply: boolean;
+};
