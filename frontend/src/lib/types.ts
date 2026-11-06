@@ -582,3 +582,17 @@ export type Conversation = {
   messages: ConciergeMessage[];
   progress: string[];
 };
+
+// ----------------------------------------------------------------------------- watch for me
+
+export type Watch = {
+  id: string;
+  request: string;
+  status: "active" | "paused" | "expired";
+  facts: string[];
+  shop: { slug: string; name: string } | null;
+  expires_at: string;
+  last_notified_at: string | null;
+  matches_sent: number;
+  created_at: string;
+};

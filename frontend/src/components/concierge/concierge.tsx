@@ -23,18 +23,14 @@ import { useAnnounce } from "@/components/announcer";
 import { PriceTag } from "@/components/commerce";
 import { ProductImage } from "@/components/product-image";
 import { brand, surface, tones, type Icon } from "@/components/ui";
+import { WatchThis } from "@/components/watches";
 import { api, errorMessage } from "@/lib/api";
 import type { ConciergeCard, ConciergeMessage, Conversation } from "@/lib/types";
 
 const EXAMPLES = ["Treats for 6 under $25, nut allergy, after 5 PM", "Breakfast for 4 people tomorrow", "Something savory for 2, under $12"];
 const FIT_ICON: Record<string, Icon> = { party: GroupsRounded, budget: AccountBalanceWalletRounded, exclusions: VerifiedUserRounded, pickup: ScheduleRounded };
 
-export function ConciergePanel({ shop, autoFocus, extraActions }: {
-  shop?: { slug: string; name: string };
-  autoFocus?: boolean;
-  /** Rendered under an assistant reply that has cards (e.g. "Watch for this"). */
-  extraActions?: (message: ConciergeMessage, conversation: Conversation) => ReactNode;
-}) {
+export function ConciergePanel({ shop, autoFocus }: { shop?: { slug: string; name: string }; autoFocus?: boolean }) {
   const storageKey = `lastcall.concierge.${shop?.slug ?? "all"}`;
   const announce = useAnnounce();
   const [conv, setConv] = useState<Conversation | null>(null);
@@ -113,7 +109,11 @@ export function ConciergePanel({ shop, autoFocus, extraActions }: {
         <Box ref={listRef} role="log" aria-live="polite" aria-label="Conversation" sx={{ maxHeight: { xs: 520, md: 620 }, overflowY: "auto", pr: 0.5, mb: 2 }}>
           <Stack spacing={2}>
             {messages.map((m, i) => (m.role === "user" ? <UserBubble key={i} text={m.text} /> : (
-              <AssistantMessage key={i} message={m} wide={!shop} footer={m.cards?.length && conv ? extraActions?.(m, conv) : null} />
+              <AssistantMessage key={i} message={m} wide={!shop} footer={
+                // Offer a watch under the latest answer (bundles found, or nothing fits), not under a question.
+                conv && !working && i === messages.length - 1 && m.source !== "system" && (m.cards?.length || !m.questions?.length)
+                  ? <WatchThis conversationId={conv.id} hasCards={!!m.cards?.length} /> : null
+              } />
             )))}
             {working ? <Progress steps={conv?.progress ?? []} /> : null}
           </Stack>
