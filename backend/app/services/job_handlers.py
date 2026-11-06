@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from app.services import (  # noqa: F401 - each module registers its handlers on import
     checkout,
+    closeout,
     holds,
     insights,
     inventory,

@@ -5,7 +5,7 @@ import from ``app.models``.
 """
 
 from app.models.accounts import SHOP_ROLES, Invite, Membership, PasswordReset, User, UserSession
-from app.models.agents import AgentRun, AgentStep, Conversation
+from app.models.agents import AgentProposal, AgentRun, AgentStep, Conversation
 from app.models.ai import AIInvocation
 from app.models.base import Base
 from app.models.catalog import (
@@ -29,6 +29,6 @@ from app.models.watches import Watch, WatchMatch
 
 __all__ = [
     "MERCHANT_STATUSES", "PRODUCT_CATEGORIES", "SHOP_ROLES",
-    "AgentRun", "AgentStep", "AIInvocation", "Conversation", "AnalyticsEvent", "Asset", "AuditEvent", "BundleProposal", "BundleQuote", "CustomerIntent", "Base", "EmailMessage", "FaultInjection", "InventoryEvent", "InventoryLot", "Invite", "Job", "Membership", "Merchant",
+    "AgentProposal", "AgentRun", "AgentStep", "AIInvocation", "Conversation", "AnalyticsEvent", "Asset", "AuditEvent", "BundleProposal", "BundleQuote", "CustomerIntent", "Base", "EmailMessage", "FaultInjection", "InventoryEvent", "InventoryLot", "Invite", "Job", "Membership", "Merchant",
     "MerchantAlert", "MetricSnapshot", "Order", "PasswordReset", "PaymentAttempt", "PickupSlot", "Price", "Product", "Refund", "Reservation", "ReservationLine", "SubstitutionOffer", "SupportRequest", "Watch", "WatchMatch", "SystemState", "User", "UserSession", "WebhookEvent",
 ]

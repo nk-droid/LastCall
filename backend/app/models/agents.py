@@ -70,3 +70,27 @@ class Conversation(Base):
     last_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created_at: Mapped[datetime] = created_col()
     updated_at: Mapped[datetime] = updated_col()
+
+
+class AgentProposal(Base):
+    """Changes an agent suggests and a person approves (e.g. the close-out plan). Nothing here is applied until someone
+    with the right role applies it; each action keeps its own status, and actions code rejected are kept as "dropped"."""
+
+    __tablename__ = "agent_proposals"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(40), index=True)  # closeout
+    merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
+    run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    subject_date: Mapped[str] = mapped_column(String(10))  # the shop's local date the plan is for
+    # pending | partly_applied | applied | dismissed | expired | superseded
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    source: Mapped[str] = mapped_column(String(20), default="agent")  # agent | rules
+    summary: Mapped[str] = mapped_column(Text, default="")
+    actions: Mapped[list[Any]] = mapped_column(default=list)
+    created_by: Mapped[str] = mapped_column(String(120))
+    decided_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = created_col()
+    updated_at: Mapped[datetime] = updated_col()

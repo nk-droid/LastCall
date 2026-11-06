@@ -46,6 +46,9 @@ DEFAULT_POLICIES: dict[str, Any] = {
     "no_show_policy": "hold_for_review",
     "no_show_grace_minutes": 30,
     "relist_at_local": "06:00",
+    # Close-out assistant: an agent proposes end-of-day changes this many minutes before the last pickup window ends.
+    "closeout_enabled": True,
+    "closeout_lead_minutes": 60,
     "tax_rates_bps": {"bakery": 0},
     "fees_minor": 0,
     "cancellation_policy_text": "You can request a cancellation up to 60 minutes before your pickup window starts. The shop reviews each request; approved cancellations are refunded in full to your PayPal payment method.",
@@ -63,6 +66,7 @@ POLICY_NUMBER_LIMITS = {
     "cancellation_cutoff_minutes": (0, 1440), "reservation_ttl_seconds": (120, 3600), "quote_ttl_seconds": (120, 3600),
     "payment_window_seconds": (300, 3600), "max_units_per_order": (1, 100), "min_lead_minutes": (0, 240),
     "low_stock_threshold": (0, 50), "stale_inventory_minutes": (30, 1440), "data_retention_days": (1, 365), "no_show_grace_minutes": (0, 240),
+    "closeout_lead_minutes": (15, 240),
 }
 NO_SHOW_POLICIES = ("hold_for_review", "auto_refund", "auto_cancel_no_refund")
 
@@ -330,6 +334,10 @@ def update_policies(ctx: StaffContext, patch: dict[str, Any]) -> dict[str, Any]:
                 raise _field_error("no_show_policy", "Unknown no-show policy")
             policies["no_show_policy"] = patch["no_show_policy"]
             customer_facing = True
+        if "closeout_enabled" in patch:
+            if not isinstance(patch["closeout_enabled"], bool):
+                raise _field_error("closeout_enabled", "Must be true or false")
+            policies["closeout_enabled"] = patch["closeout_enabled"]
         if "relist_at_local" in patch:
             value = str(patch["relist_at_local"])
             if not _HHMM.match(value):
