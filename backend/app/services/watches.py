@@ -1,0 +1,287 @@
+"""A2 Watch for me: a signed-in shopper's standing request, checked whenever shops list surplus.
+
+Creating a watch parses the request once (the same L1 + rules parser as the build page) and stores the
+structured fields. ``watches.scan`` runs every two minutes and right after a shop relists or adds stock.
+For each active watch, code finds bundles with the bundle engine's own checks (party size, budget,
+allergens, dietary needs, pickup time). A one-step agent only judges what code can't, such as "is this
+the croissant box they asked for", and writes a one-line summary. The shopper then gets at most one email
+per watch per day, never twice for the same bundle.
+
+Nothing is held when the email goes out. Opening the link runs the normal flow for that browser:
+parse → proposal → quote, then the review page holds the stock. If the bundle has sold out, the best
+current option is offered instead.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+import secrets
+from datetime import timedelta
+from typing import Any
+
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
+
+from app import clock
+from app.ai import prompts
+from app.ai.agent import Tool, run_agent
+from app.ai.sanitize import clean_customer_prose
+from app.db import transaction
+from app.domain import Exclusion, Intent
+from app.errors import Conflict, NotFound, Unprocessable
+from app.ids import new_id
+from app.models import Conversation, Merchant, User, Watch, WatchMatch
+from app.money import format_money
+from app.observability import redact
+from app.services import intent as intent_service
+from app.services import jobs, mail, quotes, recommendation
+from app.services.accounts import SessionUser
+from app.services.catalog import get_merchant, list_merchants
+
+log = logging.getLogger(__name__)
+
+MAX_ACTIVE = 5
+LIFETIME = timedelta(days=7)
+QUIET = timedelta(hours=24)  # at most one email per watch per day
+KEEP_ENDED = timedelta(days=30)
+SCAN_LIMIT = 500
+SCAN_KIND = "watches.scan"
+
+
+class NotifyArgs(BaseModel):
+    send: bool = Field(description="True to email the shopper about this bundle")
+    summary: str = Field(default="", max_length=300, description="One sentence on why it fits")
+
+
+# --------------------------------------------------------------------------- shopper actions
+
+
+def create(user: SessionUser, session_id: str, *, text: str | None = None, shop: str | None = None,
+           conversation_id: str | None = None) -> dict[str, Any]:
+    """Save a watch from typed text, or from a concierge conversation (its shopper messages and shop)."""
+    if conversation_id:
+        with transaction() as db:
+            conv = db.get(Conversation, conversation_id)
+            if conv is None or conv.session_id != session_id:
+                raise NotFound("We couldn't find that conversation", code="conversation_missing")
+            text = " ".join(m["text"] for m in conv.messages if m["role"] == "user")[-600:]
+            shop = db.get(Merchant, conv.scope_merchant_id).slug if conv.scope_merchant_id else shop
+    text = redact(re.sub(r"\s+", " ", text or "").strip())[:600]
+    if not text:
+        raise Unprocessable("Describe what you'd like us to watch for", code="watch_text_required")
+    with transaction() as db:
+        active = db.scalar(select(func.count()).select_from(Watch).where(Watch.user_id == user.user_id, Watch.status.in_(("active", "paused"))))
+        if active >= MAX_ACTIVE:
+            raise Conflict(f"You can watch up to {MAX_ACTIVE} requests at once. Stop one to add another.", code="watch_limit")
+        if shop:
+            merchant = get_merchant(db, shop)
+        else:
+            live = list_merchants(db)
+            if not live:
+                raise Unprocessable("No shops are live yet", code="no_shops")
+            merchant = live[0]
+        merchant_id, slug = (merchant.id if shop else None), merchant.slug
+    parsed, _ = intent_service.parse(intent_service.ParseRequest(merchant=slug, text=text, use_ai=True, persist=False), session_id)
+    if parsed.intent.party_size is None:
+        raise Unprocessable("Say how many people it's for, e.g. “croissants for 4 under $12”", code="party_size_required")
+    constraints = parsed.intent.model_dump(mode="json")
+    constraints.pop("pickup_date", None)  # a watch applies to whichever day a shop lists
+    with transaction() as db:
+        watch = Watch(id=new_id("wch"), user_id=user.user_id, merchant_id=merchant_id, text_redacted=text, constraints=constraints,
+                      status="active", stop_token=secrets.token_urlsafe(24), expires_at=clock.now() + LIFETIME)
+        db.add(watch)
+        db.flush()
+        result = _view(db, watch)
+    jobs.enqueue(SCAN_KIND, {"watch_id": result["id"]}, delay_seconds=2)  # something may already fit
+    return result
+
+
+def list_for(user: SessionUser) -> dict[str, Any]:
+    with transaction() as db:
+        rows = db.scalars(select(Watch).where(Watch.user_id == user.user_id, Watch.status != "stopped").order_by(Watch.created_at.desc())).all()
+        return {"watches": [_view(db, w) for w in rows], "limit": MAX_ACTIVE}
+
+
+def set_status(user: SessionUser, watch_id: str, status: str) -> dict[str, Any]:
+    with transaction() as db:
+        watch = db.get(Watch, watch_id, with_for_update=True)
+        if watch is None or watch.user_id != user.user_id or watch.status == "stopped":
+            raise NotFound("Watch not found", code="watch_missing")
+        if status == "active" and watch.status == "expired":
+            watch.expires_at = clock.now() + LIFETIME
+        watch.status = status
+        return _view(db, watch)
+
+
+def stop_by_token(token: str) -> dict[str, Any]:
+    with transaction() as db:
+        watch = db.scalar(select(Watch).where(Watch.stop_token == token))
+        if watch is None:
+            raise NotFound("That link has expired", code="watch_missing")
+        watch.status = "stopped"
+        return {"stopped": True, "request": watch.text_redacted}
+
+
+def open_match(match_id: str, session_id: str) -> dict[str, Any]:
+    """The email link: build a fresh quote for this browser through the normal flow."""
+    with transaction() as db:
+        match = db.get(WatchMatch, match_id)
+        if match is None:
+            raise NotFound("That link has expired", code="watch_match_missing")
+        watch = db.get(Watch, match.watch_id)
+        merchant = db.get(Merchant, match.merchant_id)
+        shop = {"slug": merchant.slug, "name": merchant.name}
+        if not merchant.is_live:
+            return {"status": "unavailable", "shop": shop}
+        constraints, text, signature = dict(watch.constraints), watch.text_redacted, match.signature
+    req = intent_service.ParseRequest(merchant=shop["slug"], text=text, controls=_controls(constraints, merchant), use_ai=False, persist=True)
+    _, intent_id = intent_service.parse(req, session_id)
+    proposal = recommendation.propose(intent_id or "", session_id, ai_rationale=False)
+    options = proposal["options"]
+    if not options:
+        return {"status": "sold_out", "shop": shop}
+    same = next((o for o in options if _signature(o) == signature), None)
+    chosen = same or options[0]
+    quote = quotes.create_from_option(session_id, proposal["proposal_id"], chosen["id"], chosen["default_slot_id"])
+    with transaction() as db:
+        row = db.get(WatchMatch, match_id, with_for_update=True)
+        row.opened_at = row.opened_at or clock.now()
+        row.quote_id = quote["id"]
+    return {"status": "ready", "quote_id": quote["id"], "changed": same is None, "shop": shop}
+
+
+# --------------------------------------------------------------------------- scanning
+
+
+# Listings and inventory enqueue this kind (per shop, deduped) right after a relist or new stock.
+@jobs.handler(SCAN_KIND, every=120)
+def _scan_job(payload: dict[str, Any]) -> dict[str, Any]:
+    return scan(merchant_id=payload.get("merchant_id"), watch_id=payload.get("watch_id"))
+
+
+def scan(merchant_id: str | None = None, watch_id: str | None = None) -> dict[str, Any]:
+    now = clock.now()
+    with transaction() as db:
+        db.execute(update(Watch).where(Watch.status == "active", Watch.expires_at < now).values(status="expired"))
+        db.execute(delete(Watch).where(Watch.status.in_(("stopped", "expired")), Watch.updated_at < now - KEEP_ENDED))
+        query = select(Watch).where(Watch.status == "active").order_by(Watch.created_at).limit(SCAN_LIMIT)
+        if watch_id:
+            query = query.where(Watch.id == watch_id)
+        elif merchant_id:
+            query = query.where(or_(Watch.merchant_id == merchant_id, Watch.merchant_id.is_(None)))
+        watches = list(db.scalars(query).all())
+        live = {m.id: m for m in list_merchants(db)}
+        sent = {(m.watch_id, m.merchant_id, m.signature) for m in db.scalars(select(WatchMatch).where(WatchMatch.watch_id.in_([w.id for w in watches]))).all()} if watches else set()
+        for obj in [*watches, *live.values()]:
+            db.expunge(obj)
+    notified = 0
+    for watch in watches:
+        if watch.last_notified_at and now - watch.last_notified_at < QUIET:
+            continue
+        shop_ids = [watch.merchant_id] if watch.merchant_id else ([merchant_id] if merchant_id else list(live))
+        best = None
+        for mid in shop_ids:
+            merchant = live.get(mid or "")
+            if merchant is None:
+                continue
+            try:
+                options = recommendation.code_options(mid, _intent(watch.constraints, merchant))
+            except Exception:  # one shop's bad data must not stop the scan
+                log.exception("watch scan failed for a shop", extra={"watch_id": watch.id, "merchant_id": mid})
+                continue
+            for opt in options:
+                sig = _signature(opt)
+                if (watch.id, mid, sig) not in sent and (best is None or opt["score"]["total"] > best[1]["score"]["total"]):
+                    best = (merchant, opt, sig)
+        if best and _notify(watch, *best):
+            notified += 1
+        with transaction() as db:
+            db.execute(update(Watch).where(Watch.id == watch.id).values(last_scanned_at=now))
+    return {"watches": len(watches), "notified": notified}
+
+
+def _notify(watch: Watch, merchant: Merchant, opt: dict[str, Any], sig: str) -> bool:
+    total = format_money(opt["totals"]["total_minor"], opt["totals"]["currency"])
+    items = [f"{ln['qty']} × {ln['name']}" for ln in opt["lines"]]
+    pickup_label = opt["pickup_slots"][0]["label"] if opt.get("pickup_slots") else ""
+    send, summary, source, run_id = _judge(watch, merchant, opt, items, pickup_label, total)
+    with transaction() as db:
+        user = db.get(User, watch.user_id)
+        match = WatchMatch(id=new_id("wmt"), watch_id=watch.id, merchant_id=merchant.id, signature=sig, label=opt["label"][:80],
+                           summary=summary, summary_source=source if send else "skipped", total_minor=opt["totals"]["total_minor"],
+                           currency=opt["totals"]["currency"], pickup_label=pickup_label[:80], agent_run_id=run_id)
+        try:
+            db.add(match)
+            db.flush()
+        except IntegrityError:  # another scan got there first
+            return False
+        if not send or user is None:
+            return False
+        message = mail.queue(db, to=user.email, template="watch_match", link=mail.app_link(f"/watches/{match.id}"), context={
+            "name": user.display_name.split(" ")[0] or "there", "shop": merchant.name, "request": watch.text_redacted, "label": opt["label"],
+            "items": items, "total": total, "pickup": pickup_label, "summary": summary,
+            "stop_link": mail.app_link(f"/watches/stop/{watch.stop_token}"),
+        })
+        match.email_message_id = message.id
+        db.execute(update(Watch).where(Watch.id == watch.id).values(last_notified_at=clock.now()))
+    return True
+
+
+def _judge(watch: Watch, merchant: Merchant, opt: dict[str, Any], items: list[str], pickup_label: str, total: str) -> tuple[bool, str, str, str | None]:
+    """One-step agent: is this what they asked for, and one line on why. Falls back to sending with a rules line."""
+    rules_line = f"{opt['label']} at {merchant.name}: {', '.join(items)}."
+    result = run_agent(
+        kind="watch_match", prompt_version=prompts.WATCH_PROMPT_VERSION, system=prompts.WATCH_SYSTEM,
+        messages=[{"role": "user", "content": json.dumps({
+            "shopper_request": watch.text_redacted, "shop": merchant.name, "bundle": {"label": opt["label"], "items": items},
+            "pickup": pickup_label,
+        }, ensure_ascii=False)}],
+        tools=[Tool("notify", "Decide whether to email the shopper about this bundle.", NotifyArgs, final=True)],
+        user_id=watch.user_id, subject=("watch", watch.id), max_steps=2, timeout=25,
+    )
+    if result.ok and isinstance(result.final, NotifyArgs):
+        summary = clean_customer_prose(result.final.summary, allowed_amounts={total.replace(" ", "")}, max_chars=200)
+        return result.final.send, summary or rules_line, "agent" if summary else "rules", result.run_id
+    return True, rules_line, "rules", result.run_id
+
+
+# --------------------------------------------------------------------------- helpers
+
+
+def _intent(constraints: dict[str, Any], merchant: Merchant) -> Intent:
+    return Intent.model_validate({**constraints, "pickup_date": clock.local_date(merchant.timezone).isoformat()})
+
+
+def _controls(constraints: dict[str, Any], merchant: Merchant) -> intent_service.Controls:
+    window = constraints.get("pickup_window")
+    return intent_service.Controls(
+        party_size=constraints.get("party_size"), budget_minor=constraints.get("budget_minor"),
+        exclusions=[Exclusion.model_validate(e) for e in constraints.get("exclusions", [])],
+        dietary=constraints.get("dietary", []), preferences=constraints.get("preferences", []), occasion=constraints.get("occasion"),
+        pickup_date=clock.local_date(merchant.timezone).isoformat(), pickup_window=tuple(window) if window else None,
+    )
+
+
+def _signature(opt: dict[str, Any]) -> str:
+    return "|".join(f"{ln['sku']}:{ln['qty']}" for ln in sorted(opt["lines"], key=lambda ln: ln["sku"]))[:300]
+
+
+def _view(db, watch: Watch) -> dict[str, Any]:
+    merchant = db.get(Merchant, watch.merchant_id) if watch.merchant_id else None
+    c = watch.constraints
+    facts = [f"{c['party_size']} {'person' if c.get('party_size') == 1 else 'people'}"] if c.get("party_size") else []
+    if c.get("budget_minor"):
+        facts.append(f"under {format_money(c['budget_minor'], c.get('currency', 'USD'))}")
+    facts += [f"no {e['code'].replace('_', ' ')}" for e in c.get("exclusions", [])]
+    if c.get("pickup_window"):
+        facts.append(f"pickup {c['pickup_window'][0]}–{c['pickup_window'][1]}")
+    matches = db.scalar(select(func.count()).select_from(WatchMatch).where(WatchMatch.watch_id == watch.id, WatchMatch.email_message_id.is_not(None)))
+    return {
+        "id": watch.id, "request": watch.text_redacted, "status": watch.status, "facts": facts,
+        "shop": {"slug": merchant.slug, "name": merchant.name} if merchant else None,
+        "expires_at": clock.iso(watch.expires_at), "last_notified_at": clock.iso(watch.last_notified_at),
+        "matches_sent": matches or 0, "created_at": clock.iso(watch.created_at),
+    }

@@ -25,9 +25,10 @@ from app.models.notifications import EmailMessage
 from app.models.orders import FaultInjection, Order, PaymentAttempt, Refund, SupportRequest, WebhookEvent
 from app.models.shopping import BundleProposal, BundleQuote, CustomerIntent, Reservation, ReservationLine, SubstitutionOffer
 from app.models.system import AuditEvent, Job, SystemState
+from app.models.watches import Watch, WatchMatch
 
 __all__ = [
     "MERCHANT_STATUSES", "PRODUCT_CATEGORIES", "SHOP_ROLES",
     "AgentRun", "AgentStep", "AIInvocation", "Conversation", "AnalyticsEvent", "Asset", "AuditEvent", "BundleProposal", "BundleQuote", "CustomerIntent", "Base", "EmailMessage", "FaultInjection", "InventoryEvent", "InventoryLot", "Invite", "Job", "Membership", "Merchant",
-    "MerchantAlert", "MetricSnapshot", "Order", "PasswordReset", "PaymentAttempt", "PickupSlot", "Price", "Product", "Refund", "Reservation", "ReservationLine", "SubstitutionOffer", "SupportRequest", "SystemState", "User", "UserSession", "WebhookEvent",
+    "MerchantAlert", "MetricSnapshot", "Order", "PasswordReset", "PaymentAttempt", "PickupSlot", "Price", "Product", "Refund", "Reservation", "ReservationLine", "SubstitutionOffer", "SupportRequest", "Watch", "WatchMatch", "SystemState", "User", "UserSession", "WebhookEvent",
 ]

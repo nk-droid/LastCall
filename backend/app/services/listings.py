@@ -68,6 +68,8 @@ def relist(db: Session, merchant: Merchant, now: datetime, actor: str = "system:
     else:
         state.value = {"date": local_date, "products": count}
     pickup.ensure_slots(db, merchant, now)
+    if count:  # today's listing may fit a shopper's watch
+        jobs.enqueue("watches.scan", {"merchant_id": merchant.id}, delay_seconds=15, dedupe_key=f"watches.scan:{merchant.id}", db=db)
     return count
 
 
