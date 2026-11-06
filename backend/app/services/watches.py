@@ -18,6 +18,7 @@ import json
 import logging
 import re
 import secrets
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
@@ -51,9 +52,33 @@ SCAN_LIMIT = 500
 SCAN_KIND = "watches.scan"
 
 
+CANDIDATES = 4  # bundles the judge chooses from per watch per scan
+PER_SHOP = 2
+
+
 class NotifyArgs(BaseModel):
-    send: bool = Field(description="True to email the shopper about this bundle")
-    summary: str = Field(default="", max_length=300, description="One sentence on why it fits")
+    pick: str | None = Field(default=None, description="The candidate id to email the shopper about, or null if none is what they asked for")
+    summary: str = Field(default="", max_length=300, description="One sentence on why the picked bundle fits")
+
+
+@dataclass
+class _Candidate:
+    id: str
+    merchant: Merchant
+    opt: dict[str, Any]
+    sig: str
+
+    @property
+    def items(self) -> list[str]:
+        return [f"{ln['qty']} × {ln['name']}" for ln in self.opt["lines"]]
+
+    @property
+    def pickup_label(self) -> str:
+        return self.opt["pickup_slots"][0]["label"] if self.opt.get("pickup_slots") else ""
+
+    @property
+    def total(self) -> str:
+        return format_money(self.opt["totals"]["total_minor"], self.opt["totals"]["currency"])
 
 
 # --------------------------------------------------------------------------- shopper actions
@@ -182,7 +207,7 @@ def scan(merchant_id: str | None = None, watch_id: str | None = None) -> dict[st
         if watch.last_notified_at and now - watch.last_notified_at < QUIET:
             continue
         shop_ids = [watch.merchant_id] if watch.merchant_id else ([merchant_id] if merchant_id else list(live))
-        best = None
+        found: list[tuple[Merchant, dict[str, Any], str]] = []
         for mid in shop_ids:
             merchant = live.get(mid or "")
             if merchant is None:
@@ -192,60 +217,73 @@ def scan(merchant_id: str | None = None, watch_id: str | None = None) -> dict[st
             except Exception:  # one shop's bad data must not stop the scan
                 log.exception("watch scan failed for a shop", extra={"watch_id": watch.id, "merchant_id": mid})
                 continue
-            for opt in options:
-                sig = _signature(opt)
-                if (watch.id, mid, sig) not in sent and (best is None or opt["score"]["total"] > best[1]["score"]["total"]):
-                    best = (merchant, opt, sig)
-        if best and _notify(watch, *best):
+            fresh = [(merchant, o, _signature(o)) for o in options if (watch.id, mid, _signature(o)) not in sent]
+            found += sorted(fresh, key=lambda c: -c[1]["score"]["total"])[:PER_SHOP]
+        ranked = sorted(found, key=lambda c: -c[1]["score"]["total"])[:CANDIDATES]
+        candidates = [_Candidate(id=f"c{i}", merchant=m, opt=o, sig=sig) for i, (m, o, sig) in enumerate(ranked, start=1)]
+        if candidates and _notify(watch, candidates):
             notified += 1
         with transaction() as db:
             db.execute(update(Watch).where(Watch.id == watch.id).values(last_scanned_at=now))
     return {"watches": len(watches), "notified": notified}
 
 
-def _notify(watch: Watch, merchant: Merchant, opt: dict[str, Any], sig: str) -> bool:
-    total = format_money(opt["totals"]["total_minor"], opt["totals"]["currency"])
-    items = [f"{ln['qty']} × {ln['name']}" for ln in opt["lines"]]
-    pickup_label = opt["pickup_slots"][0]["label"] if opt.get("pickup_slots") else ""
-    send, summary, source, run_id = _judge(watch, merchant, opt, items, pickup_label, total)
+def _notify(watch: Watch, candidates: list[_Candidate]) -> bool:
+    """Let the judge pick one candidate (or none), email it, and record every candidate so none is judged twice."""
+    picked, summary, source, run_id = _judge(watch, candidates)
     with transaction() as db:
         user = db.get(User, watch.user_id)
-        match = WatchMatch(id=new_id("wmt"), watch_id=watch.id, merchant_id=merchant.id, signature=sig, label=opt["label"][:80],
-                           summary=summary, summary_source=source if send else "skipped", total_minor=opt["totals"]["total_minor"],
-                           currency=opt["totals"]["currency"], pickup_label=pickup_label[:80], agent_run_id=run_id)
-        try:
-            db.add(match)
-            db.flush()
-        except IntegrityError:  # another scan got there first
+        chosen: WatchMatch | None = None
+        for cand in candidates:
+            is_pick = picked is not None and cand.id == picked.id
+            row = WatchMatch(id=new_id("wmt"), watch_id=watch.id, merchant_id=cand.merchant.id, signature=cand.sig, label=cand.opt["label"][:80],
+                             summary=summary if is_pick else "", summary_source=source if is_pick else "skipped",
+                             total_minor=cand.opt["totals"]["total_minor"], currency=cand.opt["totals"]["currency"],
+                             pickup_label=cand.pickup_label[:80], agent_run_id=run_id)
+            try:
+                with db.begin_nested():
+                    db.add(row)
+            except IntegrityError:  # another scan recorded it first
+                continue
+            if is_pick:
+                chosen = row
+        if picked is None or chosen is None or user is None:
             return False
-        if not send or user is None:
-            return False
-        message = mail.queue(db, to=user.email, template="watch_match", link=mail.app_link(f"/watches/{match.id}"), context={
-            "name": user.display_name.split(" ")[0] or "there", "shop": merchant.name, "request": watch.text_redacted, "label": opt["label"],
-            "items": items, "total": total, "pickup": pickup_label, "summary": summary,
+        message = mail.queue(db, to=user.email, template="watch_match", link=mail.app_link(f"/watches/{chosen.id}"), context={
+            "name": user.display_name.split(" ")[0] or "there", "shop": picked.merchant.name, "request": watch.text_redacted,
+            "label": picked.opt["label"], "items": picked.items, "total": picked.total, "pickup": picked.pickup_label, "summary": summary,
             "stop_link": mail.app_link(f"/watches/stop/{watch.stop_token}"),
         })
-        match.email_message_id = message.id
+        chosen.email_message_id = message.id
         db.execute(update(Watch).where(Watch.id == watch.id).values(last_notified_at=clock.now()))
     return True
 
 
-def _judge(watch: Watch, merchant: Merchant, opt: dict[str, Any], items: list[str], pickup_label: str, total: str) -> tuple[bool, str, str, str | None]:
-    """One-step agent: is this what they asked for, and one line on why. Falls back to sending with a rules line."""
-    rules_line = f"{opt['label']} at {merchant.name}: {', '.join(items)}."
+def _judge(watch: Watch, candidates: list[_Candidate]) -> tuple[_Candidate | None, str, str, str | None]:
+    """One-step agent: which code-approved bundle (if any) is what they asked for, and one line on why.
+    Without a model, the best-scoring candidate is sent with a plain line."""
     result = run_agent(
         kind="watch_match", prompt_version=prompts.WATCH_PROMPT_VERSION, system=prompts.WATCH_SYSTEM,
         messages=[{"role": "user", "content": json.dumps({
-            "shopper_request": watch.text_redacted, "shop": merchant.name, "bundle": {"label": opt["label"], "items": items},
-            "pickup": pickup_label,
+            "shopper_request": watch.text_redacted,
+            "candidates": [{"id": c.id, "shop": c.merchant.name, "label": c.opt["label"], "items": c.items, "pickup": c.pickup_label}
+                           for c in candidates],
         }, ensure_ascii=False)}],
-        tools=[Tool("notify", "Decide whether to email the shopper about this bundle.", NotifyArgs, final=True)],
+        tools=[Tool("notify", "Pick the bundle to email the shopper about, or none.", NotifyArgs, final=True)],
         user_id=watch.user_id, subject=("watch", watch.id), max_steps=2, timeout=25,
     )
     if result.ok and isinstance(result.final, NotifyArgs):
-        summary = clean_customer_prose(result.final.summary, allowed_amounts={total.replace(" ", "")}, max_chars=200)
-        return result.final.send, summary or rules_line, "agent" if summary else "rules", result.run_id
-    return True, rules_line, "rules", result.run_id
+        picked = next((c for c in candidates if c.id == result.final.pick), None)
+        if picked is None:
+            return None, "", "skipped", result.run_id
+        summary = clean_customer_prose(result.final.summary, allowed_amounts={picked.total.replace(" ", "")}, max_chars=200)
+        return picked, summary or _rules_line(picked), "agent" if summary else "rules", result.run_id
+    best = candidates[0]
+    return best, _rules_line(best), "rules", result.run_id
+
+
+def _rules_line(cand: _Candidate) -> str:
+    return f"{cand.opt['label']} at {cand.merchant.name}: {', '.join(cand.items)}."
 
 
 # --------------------------------------------------------------------------- helpers

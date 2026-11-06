@@ -5,6 +5,7 @@ whether a code-approved bundle is what the shopper asked for and writes the emai
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 
 import pytest
@@ -87,7 +88,7 @@ def test_a_fitting_bundle_sends_one_email_and_never_the_same_bundle_twice(shoppe
     assert email.to_email == EMAIL and email.subject.startswith("Found at Juniper & Rye Bakehouse")
     assert "/watches/stop/" in email.text_body and "breakfast for 2 under $10, nut allergy" in email.text_body
     with transaction() as db:
-        match = db.scalars(select(WatchMatch).where(WatchMatch.watch_id == created["id"])).one()
+        match = db.scalars(select(WatchMatch).where(WatchMatch.watch_id == created["id"], WatchMatch.email_message_id.is_not(None))).one()
         assert match.total_minor <= 1000 and match.email_message_id == email.id
         assert db.scalars(select(Reservation)).first() is None  # nothing held until the shopper opens it
     names = matched_products(match.id)
@@ -152,7 +153,7 @@ def test_the_email_link_holds_through_the_normal_flow_in_any_browser(app, shoppe
     watch(shopper, "breakfast for 2 under $10")
     run_scans()
     with transaction() as db:
-        match = db.scalars(select(WatchMatch)).one()
+        match = db.scalars(select(WatchMatch).where(WatchMatch.email_message_id.is_not(None))).one()
     phone = new_client(app)  # the email opened on another device, signed out
     opened = ok(phone.post(f"/api/watches/matches/{match.id}/open"))
     assert opened["status"] == "ready" and opened["changed"] is False
@@ -166,7 +167,7 @@ def test_a_sold_out_match_says_so_instead_of_inventing_a_bundle(app, shopper):
     watch(shopper, "breakfast for 2 under $10")
     run_scans()
     with transaction() as db:
-        match = db.scalars(select(WatchMatch)).one()
+        match = db.scalars(select(WatchMatch).where(WatchMatch.email_message_id.is_not(None))).one()
         skus = [p.sku for p in db.scalars(select(Product)).all()]
     for sku in skus:
         ok(staff.post("/api/merchant/inventory", json={"product_id": product_id(sku), "action": "pause"}))
@@ -183,20 +184,26 @@ def test_the_stop_link_ends_the_watch(shopper, client):
 
 def test_the_agent_can_decline_a_bundle_that_is_not_what_was_asked(shopper, fixture_llm):
     fixture_llm.queue("L1_intent", {"party_size": 2})
-    fixture_llm.queue("watch_match", {"tool_calls": [{"name": "notify", "args": {"send": False, "summary": "No croissants in this one."}}]})
+    fixture_llm.queue("watch_match", {"tool_calls": [{"name": "notify", "args": {"pick": None}}]})
     created = watch(shopper, "croissants for 2")
     run_scans()
     assert match_emails() == []
     with transaction() as db:
-        match = db.scalars(select(WatchMatch).where(WatchMatch.watch_id == created["id"])).one()
+        matches = db.scalars(select(WatchMatch).where(WatchMatch.watch_id == created["id"])).all()
         run = db.scalars(select(AgentRun).where(AgentRun.subject_id == created["id"])).one()
-    assert match.summary_source == "skipped" and run.kind == "watch_match" and run.status == "done"
+    # Every candidate it saw is recorded, so the same bundles are not judged again on the next scan.
+    assert matches and {m.summary_source for m in matches} == {"skipped"}
+    assert run.kind == "watch_match" and run.status == "done"
+    with transaction() as db:
+        db.execute(update(Watch).values(last_notified_at=None))
+    run_scans()
+    assert len(fixture_llm.calls) == 2  # L1 parse + one judge call; no second judge call for the same bundles
 
 
 def test_the_agents_line_is_cleaned_before_it_is_emailed(shopper, fixture_llm):
     fixture_llm.queue("L1_intent", {"party_size": 2})
     fixture_llm.queue("watch_match", {"tool_calls": [{"name": "notify", "args": {
-        "send": True, "summary": "Flaky croissants, just what you asked for. Totally nut-free and safe! Hurry, only 2 left!"}}]})
+        "pick": "c1", "summary": "Flaky croissants, just what you asked for. Totally nut-free and safe! Hurry, only 2 left!"}}]})
     watch(shopper, "croissants for 2")
     run_scans()
     [email] = match_emails()
@@ -204,12 +211,36 @@ def test_the_agents_line_is_cleaned_before_it_is_emailed(shopper, fixture_llm):
     assert "nut-free" not in email.text_body.lower() and "Hurry" not in email.text_body
 
 
+def test_the_agent_picks_the_candidate_that_is_what_was_asked_for(shopper, fixture_llm):
+    from app.seed.catalogs import NIGHT_OWL_CATALOG
+
+    from .fixtures import seed_bakery
+
+    seed_bakery(slug="night-owl", name="Night Owl Doughnuts", catalog=NIGHT_OWL_CATALOG)
+    seen: dict = {}
+
+    def judge(messages):
+        candidates = json.loads(messages[-1]["content"])["candidates"]
+        seen["candidates"] = candidates
+        pick = next(c for c in candidates if any("croissant" in i.lower() for i in c["items"]))
+        return {"tool_calls": [{"name": "notify", "args": {"pick": pick["id"], "summary": "Mostly croissants."}}]}
+
+    fixture_llm.queue("L1_intent", {"party_size": 2})
+    fixture_llm.queue("watch_match", judge)
+    watch(shopper, "croissants for 2", shop=None)
+    run_scans()
+
+    assert len(seen["candidates"]) >= 2 and {c["shop"] for c in seen["candidates"]} == {"Juniper & Rye Bakehouse", "Night Owl Doughnuts"}
+    [email] = match_emails()
+    assert "croissant" in email.text_body.lower() and "Mostly croissants." in email.text_body
+
+
 def test_with_the_model_off_matches_still_send_with_a_plain_line(shopper):
     ai_provider.set_provider(None)
     watch(shopper, "snacks for 2")
     run_scans()
     with transaction() as db:
-        match = db.scalars(select(WatchMatch)).one()
+        match = db.scalars(select(WatchMatch).where(WatchMatch.email_message_id.is_not(None))).one()
         sent = db.scalar(select(func.count()).select_from(EmailMessage).where(EmailMessage.template == "watch_match"))
     assert sent == 1 and match.summary_source == "rules" and "at Juniper & Rye Bakehouse" in match.summary
 
