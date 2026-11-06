@@ -26,6 +26,7 @@ import { Alert, Box, Button, Grid, IconButton, LinearProgress, Link, ListItemBut
 import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 
 import { useAnnounce } from "@/components/announcer";
+import { SlotsTimeline, TimelineToggle, type TimelineView } from "@/components/pickup-timeline";
 import { ProductImage } from "@/components/product-image";
 import { FulfillmentPill, PaymentPill } from "@/components/status-pills";
 import {
@@ -258,6 +259,7 @@ function OrdersCard({ overview: o }: { overview: Overview }) {
 function SlotsCard({ slots }: { slots: Overview["slots"] }) {
   const booked = slots.reduce((n, s) => n + s.booked, 0);
   const capacity = slots.reduce((n, s) => n + s.capacity, 0);
+  const [view, setView] = useState<TimelineView>("timeline");
   const scroller = useRef<HTMLDivElement>(null);
   const scrolled = useRef(false);
   // Open on the window that's happening now, not midnight. Once only, so polling never yanks the list.
@@ -269,15 +271,18 @@ function SlotsCard({ slots }: { slots: Overview["slots"] }) {
     const current = slots.find((s) => Date.parse(s.ends_at) > now);
     const row = current ? box.querySelector<HTMLElement>(`[data-slot="${current.id}"]`) : null;
     if (row) box.scrollTop = row.offsetTop - 6;
-  }, [slots]);
+  }, [slots, view]);
   return (
     <SectionCard
       title="Pickup window utilization"
       icon={<ScheduleRounded />}
       action={
-        <Button href="/merchant/settings#slots" size="small" variant="outlined" color="inherit" startIcon={<TuneRounded />}>
-          Set capacity
-        </Button>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <TimelineToggle value={view} onChange={setView} />
+          <Button href="/merchant/settings?tab=pickup" size="small" variant="outlined" color="inherit" startIcon={<TuneRounded />}>
+            Set capacity
+          </Button>
+        </Stack>
       }
     >
       {slots.length ? (
@@ -291,31 +296,34 @@ function SlotsCard({ slots }: { slots: Overview["slots"] }) {
             </Box>
             pickup spots booked today
           </Typography>
-          <ScrollArea label="Pickup windows today" maxHeight={340} ref={scroller}>
-            <Box component="ul" sx={{ ...list, display: "grid", gap: 2 }}>
-              {slots.map((s) => {
-                const pct = s.capacity ? Math.min(100, Math.round((s.booked / s.capacity) * 100)) : 100;
-                const full = pct >= 100;
-                const label = s.label.replace("Today ", "");
-                return (
-                  <li key={s.id} data-slot={s.id}>
-                    <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center", mb: 0.75 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 650 }}>
-                        {label}
-                      </Typography>
-                      <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                        {full ? <StatusChip tone="warning" label="Full" /> : null}
-                        <Typography variant="body2" color="text.secondary" className="tabular">
-                          {s.booked}/{s.capacity} booked
+          {view === "timeline" ? <SlotsTimeline slots={slots} /> : null}
+          {view === "list" ? (
+            <ScrollArea label="Pickup windows today" maxHeight={340} ref={scroller}>
+              <Box component="ul" sx={{ ...list, display: "grid", gap: 2 }}>
+                {slots.map((s) => {
+                  const pct = s.capacity ? Math.min(100, Math.round((s.booked / s.capacity) * 100)) : 100;
+                  const full = pct >= 100;
+                  const label = s.label.replace("Today ", "");
+                  return (
+                    <li key={s.id} data-slot={s.id}>
+                      <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center", mb: 0.75 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 650 }}>
+                          {label}
                         </Typography>
+                        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                          {full ? <StatusChip tone="warning" label="Full" /> : null}
+                          <Typography variant="body2" color="text.secondary" className="tabular">
+                            {s.booked}/{s.capacity} booked
+                          </Typography>
+                        </Stack>
                       </Stack>
-                    </Stack>
-                    <LinearProgress variant="determinate" value={pct} color={full ? "warning" : "primary"} aria-label={`${label}: ${s.booked} of ${s.capacity} booked`} />
-                  </li>
-                );
-              })}
-            </Box>
-          </ScrollArea>
+                      <LinearProgress variant="determinate" value={pct} color={full ? "warning" : "primary"} aria-label={`${label}: ${s.booked} of ${s.capacity} booked`} />
+                    </li>
+                  );
+                })}
+              </Box>
+            </ScrollArea>
+          ) : null}
         </>
       ) : (
         <EmptyState icon={ScheduleRounded} title="No pickup windows today" />

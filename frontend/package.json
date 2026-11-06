@@ -11,6 +11,9 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@bryntum/core-enterprise": "8.0.0",
+    "@bryntum/scheduler-enterprise": "8.0.0",
+    "@bryntum/scheduler-react-enterprise": "8.0.0",
     "@emotion/cache": "^11.14.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",

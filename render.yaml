@@ -75,3 +75,7 @@ services:
           type: web
           name: lastcall-api
           property: hostport
+      # Bryntum Scheduler license key (pickup timelines). Inlined into the browser bundle at build time,
+      # so a change needs a redeploy. Without it the timelines run as a trial with a badge.
+      - key: NEXT_PUBLIC_BRYNTUM_LICENSE_KEY
+        sync: false

@@ -8,7 +8,6 @@ import {
   PaymentsRounded,
   PauseCircleRounded,
   ReceiptRounded,
-  RemoveCircleOutlineRounded,
   RuleRounded,
   ScheduleRounded,
   StorefrontRounded,
@@ -37,7 +36,9 @@ import {
 import { useState, type ReactNode } from "react";
 
 import { useAnnounce } from "@/components/announcer";
-import { InfoTip, SectionCard, StatusChip, type Icon, type Tone } from "@/components/ui";
+import { TimelineToggle, WeekHoursTimeline, type TimelineView } from "@/components/pickup-timeline";
+import { CLOSED_BY_MERCHANT, slotStatus, splitLabel } from "@/components/slot-status";
+import { InfoTip, SectionCard, StatusChip } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { hhmmLabel } from "@/lib/format";
 import type { Address, ShopPolicies, ShopSettings, Slot, Week, Weekday } from "@/lib/types";
@@ -173,6 +174,7 @@ export function HoursSection({ settings, onSaved }: { settings: ShopSettings; on
   const { busy, error, fields, save } = useSave(onSaved);
   const pause = useSave(onSaved);
   const disabled = !settings.can_edit;
+  const [view, setView] = useState<TimelineView>("timeline");
 
   function setDay(week: Week, set: (w: Week) => void, day: Weekday, index: 0 | 1, value: string) {
     const current = week[day] ?? ["16:00", "19:00"];
@@ -193,7 +195,19 @@ export function HoursSection({ settings, onSaved }: { settings: ShopSettings; on
           label={settings.pickup_paused ? "Pickup paused" : "Taking pickups"} />
       ) : settings.pickup_paused ? <StatusChip tone="warning" icon={PauseCircleRounded} label="Pickup paused" /> : null}>
       <ErrorLine message={error ?? pause.error} />
-      {/* Bleed to the card edges so the columns get the whole width; gutters match the card padding. */}
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mb: 2, alignItems: { sm: "center" }, justifyContent: "space-between" }}>
+        <TimelineToggle value={view} onChange={setView} listLabel="Table" />
+        <Typography variant="caption" color="text.secondary">
+          {view === "timeline"
+            ? disabled ? "Each day's band is its opening hours; the green pill is its pickup window." : "Drag the band or pill to move it, or drag an end to change the time. Turn days on or off in the table."
+            : "Turn pickup on or off for each day, or type exact times."}
+        </Typography>
+      </Stack>
+      {view === "timeline" ? (
+        <WeekHoursTimeline hours={hours} windows={windows} disabled={disabled}
+          onChange={(kind, day, value) => (kind === "hours" ? setHours : setWindows)((w) => ({ ...w, [day]: value }))} />
+      ) : (
+      /* Bleed to the card edges so the columns get the whole width; gutters match the card padding. */
       <Box sx={{ overflowX: "auto", mx: { xs: -2.5, sm: -3 } }}>
         <Table size="small" sx={{ minWidth: 900, "& th:first-of-type, & td:first-of-type": { pl: { xs: 2.5, sm: 3 } }, "& th:last-of-type, & td:last-of-type": { pr: { xs: 2.5, sm: 3 } } }}>
           <caption className="sr-only">Opening hours and pickup windows for each day</caption>
@@ -246,6 +260,10 @@ export function HoursSection({ settings, onSaved }: { settings: ShopSettings; on
           </TableBody>
         </Table>
       </Box>
+      )}
+      {view === "timeline" && Object.keys(fields).length ? (
+        <Alert severity="error" role="alert" sx={{ mt: 2 }}>Some times need fixing. Switch to the table to see which day.</Alert>
+      ) : null}
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mt: 2.5 }}>
         <TextField select label="Slot length" value={slotMinutes} onChange={(e) => setSlotMinutes(Number(e.target.value))} disabled={disabled} sx={{ minWidth: 160 }}>
           {[15, 30, 60].map((m) => <MenuItem key={m} value={m}>{m} minutes</MenuItem>)}
@@ -437,22 +455,6 @@ export function PoliciesSection({ settings, onSaved, onConfirm }: { settings: Sh
 }
 
 // ----------------------------------------------------------------------------- upcoming slots
-
-const CLOSED_BY_MERCHANT = "This pickup slot was closed by the merchant";
-
-function splitLabel(label: string): { day: string; time: string } {
-  const match = label.match(/^(.*?)\s+(\d{1,2}:\d{2}.*)$/);
-  return match ? { day: match[1], time: match[2] } : { day: "", time: label };
-}
-
-function slotStatus(slot: Slot): { tone: Tone; label: string; icon: Icon; reason?: string } {
-  if (slot.unavailable_reason === CLOSED_BY_MERCHANT) return { tone: "neutral", label: "Closed", icon: BlockRounded };
-  if (slot.bookable) return { tone: "success", label: "Open", icon: CheckCircleRounded };
-  const reason = slot.unavailable_reason ?? undefined;
-  if (slot.capacity > 0 && slot.remaining <= 0) return { tone: "warning", label: "Full", icon: WarningAmberRounded, reason };
-  if (reason?.includes("started")) return { tone: "neutral", label: "Started", icon: ScheduleRounded, reason };
-  return { tone: "neutral", label: "Unavailable", icon: RemoveCircleOutlineRounded, reason };
-}
 
 export function SlotTable({ slots, canEdit, busy, onUpdate }: { slots: Slot[]; canEdit: boolean; busy: string | null; onUpdate: (slot: Slot, body: { capacity?: number; status?: string }) => void }) {
   const groups: { date: string; day: string; slots: Slot[]; booked: number; capacity: number }[] = [];
