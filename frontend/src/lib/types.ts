@@ -545,3 +545,40 @@ export type ShopSettings = {
 export type TeamMember = { membership_id: string; user_id: string; name: string; email: string; role: Role; role_label: string; joined_at: string; last_login_at: string | null };
 export type TeamInvite = { id: string; email: string; role: Role; role_label: string; expires_at: string; created_at: string };
 export type Team = { members: TeamMember[]; invites: TeamInvite[]; assignable_roles: Role[]; you: string };
+
+// ----------------------------------------------------------------------------- shopping concierge (agent)
+
+export type ConciergeCard = {
+  option_id: string;
+  proposal_id: string;
+  option_key: string;
+  shop: { slug: string; name: string };
+  label: string;
+  kind: string;
+  lines: { name: string; qty: number; image: ImageRef | null }[];
+  units: number;
+  total_minor: number;
+  reference_minor: number;
+  discount_minor: number;
+  currency: string;
+  fits: FitEvidence[];
+  pickup_label: string | null;
+  default_slot_id: string | null;
+};
+
+export type ConciergeMessage = {
+  role: "user" | "assistant";
+  text: string;
+  at: string;
+  cards?: ConciergeCard[];
+  questions?: string[];
+  source?: "agent" | "rules" | "system";
+};
+
+export type Conversation = {
+  id: string;
+  status: "idle" | "working";
+  scope: { slug: string; name: string } | null;
+  messages: ConciergeMessage[];
+  progress: string[];
+};

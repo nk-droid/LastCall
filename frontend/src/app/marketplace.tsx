@@ -18,6 +18,7 @@ import { Box, Button, Card, CardActionArea, CardContent, Chip, Grid, Link, Stack
 import { useId } from "react";
 
 import { Avatar, useAccount } from "@/components/account";
+import { ConciergePanel } from "@/components/concierge/concierge";
 import { ProductImage } from "@/components/product-image";
 import { PageShell } from "@/components/site";
 import { ErrorState, IconBadge, LoadingBlock, PageHeader, StatusChip, brand, surface, shadows, type Icon } from "@/components/ui";
@@ -50,6 +51,19 @@ export function Marketplace() {
       />
 
       <ActiveOrders key={version} />
+
+      <Card component="section" aria-labelledby="ask-heading" sx={{ mb: { xs: 5, sm: 6 } }}>
+        <CardContent sx={{ p: { xs: "20px", sm: "28px" }, "&:last-child": { pb: { xs: "20px", sm: "28px" } } }}>
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", mb: 2 }}>
+            <IconBadge tone="success"><AutoAwesomeRounded /></IconBadge>
+            <Box>
+              <Typography id="ask-heading" variant="h3" component="h2">Ask LastCall</Typography>
+              <Typography variant="body2" color="text.secondary">Tell it what you need. It checks every shop&apos;s surplus and brings back bundles that fit.</Typography>
+            </Box>
+          </Stack>
+          <ConciergePanel />
+        </CardContent>
+      </Card>
 
       <Box component="section" aria-labelledby="shops-heading" sx={{ mb: { xs: 5, sm: 7 } }}>
         <Stack direction="row" spacing={1.5} useFlexGap sx={{ alignItems: "baseline", flexWrap: "wrap", mb: 2.5 }}>
