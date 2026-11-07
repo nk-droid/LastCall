@@ -56,6 +56,26 @@ def delete_watch(watch_id: str, user: SessionUser = Depends(current_user)) -> di
     return {"stopped": True}
 
 
+@router.get("/me/alerts")
+def list_alerts(user: SessionUser = Depends(current_user)) -> dict[str, Any]:
+    return watches.alerts(user)
+
+
+@router.get("/me/alerts/unread")
+def unread_alerts(user: SessionUser = Depends(current_user)) -> dict[str, Any]:
+    return {"unread": watches.unread_count(user)}
+
+
+@router.post("/me/alerts/seen")
+def seen_alerts(user: SessionUser = Depends(current_user)) -> dict[str, Any]:
+    return watches.mark_seen(user)
+
+
+@router.post("/me/alerts/{match_id}/dismiss")
+def dismiss_alert(match_id: str, user: SessionUser = Depends(current_user)) -> dict[str, Any]:
+    return watches.dismiss(user, match_id)
+
+
 @router.post("/watches/matches/{match_id}/open", dependencies=[Depends(rate_limit("checkout", 30))])
 def open_match(match_id: str, session_id: str = Depends(shopper_session)) -> dict[str, Any]:
     """The email's link (the unguessable match id is the credential): a fresh quote for this browser."""

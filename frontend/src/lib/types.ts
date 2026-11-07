@@ -575,6 +575,17 @@ export type ConciergeMessage = {
   cards?: ConciergeCard[];
   questions?: string[];
   source?: "agent" | "rules" | "system";
+  details?: ConciergeDetails;
+};
+
+/** What a reply was based on: the request as understood, and every shop checked this turn. */
+export type ConciergeDetails = {
+  understood: { key: string; label: string; strict: boolean; editable: boolean }[];
+  shops: {
+    slug: string; name: string; options: number; currency: string; from_minor: number | null; reason: string | null;
+    left_out: string[]; left_out_count: number; top: boolean; shown: boolean; shown_total_minor: number | null; shown_units: number | null;
+  }[];
+  listed: number | null;
 };
 
 export type Conversation = {
@@ -599,6 +610,21 @@ export type Watch = {
   created_at: string;
 };
 
+export type WatchAlert = {
+  id: string;
+  shop: { slug: string; name: string };
+  label: string;
+  lines: { name: string; qty: number }[];
+  summary: string;
+  total_minor: number;
+  currency: string;
+  pickup_label: string;
+  created_at: string;
+  seen: boolean;
+  opened: boolean;
+  watch: { id: string; request: string; status: string } | null;
+};
+
 // ----------------------------------------------------------------------------- close-out plan (agent)
 
 export type CloseoutAction = {
@@ -610,6 +636,12 @@ export type CloseoutAction = {
   before?: string;
   after?: string;
   note?: string;
+  name?: string;
+  slot_id?: string;
+  slot_label?: string;
+  booked?: number;
+  old_sale_minor?: number;
+  new_sale_minor?: number;
 };
 
 export type CloseoutPlan = {
@@ -628,6 +660,9 @@ export type CloseoutPlan = {
 
 export type CloseoutState = {
   plan: CloseoutPlan | null;
-  schedule: { enabled: boolean; lead_minutes: number; runs_at: string | null; runs_at_label: string | null; closes_at_label: string | null };
+  schedule: {
+    enabled: boolean; lead_minutes: number; runs_at: string | null; runs_at_label: string | null;
+    opens_at: string | null; closes_at: string | null; closes_at_label: string | null;
+  };
   can_apply: boolean;
 };

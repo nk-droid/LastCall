@@ -8,6 +8,8 @@ import type { ReactNode } from "react";
 import { brand, surface } from "@/theme/tokens";
 
 import { AccountMenu } from "./account";
+import { AlertsBell } from "./alerts";
+import { AskProvider } from "./concierge/ask-launcher";
 import { useConfig } from "./config";
 import { StatusChip } from "./ui";
 
@@ -61,6 +63,7 @@ export function SiteHeader({ children, shop }: { children?: ReactNode; shop?: Sh
           <Box sx={{ display: { xs: "none", sm: "block" } }}>
             <EnvironmentBadge />
           </Box>
+          <AlertsBell />
           <Button href="/orders" color="inherit" startIcon={<ReceiptLongRounded />} sx={{ display: { xs: "none", md: "inline-flex" }, color: "text.secondary" }}>
             My orders
           </Button>
@@ -116,13 +119,13 @@ export function SiteFooter({ shop }: { shop?: ShopContext }) {
 
 export function PageShell({ children, width = "wide", shop }: { children: ReactNode; width?: "wide" | "narrow"; shop?: ShopContext }) {
   return (
-    <>
+    <AskProvider shop={shop}>
       <SiteHeader shop={shop} />
       <Container component="main" id="main" maxWidth={false} sx={{ maxWidth: width === "wide" ? 1200 : 820, flex: 1, pt: { xs: 3, sm: 5 }, pb: 4 }}>
         {children}
       </Container>
       <SiteFooter shop={shop} />
-    </>
+    </AskProvider>
   );
 }
 

@@ -113,7 +113,7 @@ class OllamaProvider:
         try:
             reply = self._chat(timeout).invoke(chat, format=schema, stream=False)
         except httpx.TimeoutException as exc:
-            raise ProviderFailure("timeout", f"model call timed out after {timeout}s") from exc
+            raise ProviderFailure("timeout", f"model call timed out after {timeout:.1f}s") from exc
         except ResponseError as exc:
             raise ProviderFailure("http_error", f"Ollama returned {exc.status_code}: {str(exc.error)[:200]}") from exc
         except (ConnectionError, httpx.HTTPError) as exc:
@@ -127,7 +127,7 @@ class OllamaProvider:
         try:
             reply = self._chat(timeout, think).bind_tools(tools).invoke([_to_langchain(m) for m in messages], stream=False)
         except httpx.TimeoutException as exc:
-            raise ProviderFailure("timeout", f"model call timed out after {timeout}s") from exc
+            raise ProviderFailure("timeout", f"model call timed out after {timeout:.1f}s") from exc
         except ResponseError as exc:
             raise ProviderFailure("http_error", f"Ollama returned {exc.status_code}: {str(exc.error)[:200]}") from exc
         except (ConnectionError, httpx.HTTPError) as exc:
@@ -320,7 +320,7 @@ def extract_json(text: str) -> Any:
 
 def _record(task: str, prompt_version: str, provider: str, model: str, input_hash: str, result: str,
             reason: str | None, latency_ms: int, tokens: tuple[int | None, int | None], repaired: bool, fallback: bool,
-            agent_run_id: str | None = None) -> str:
+            agent_run_id: str | None = None, offset_ms: int | None = None) -> str:
     inv_id = new_id("ai")
     try:
         with transaction() as db:
@@ -340,6 +340,7 @@ def _record(task: str, prompt_version: str, provider: str, model: str, input_has
                     repaired=repaired,
                     fallback_used=fallback,
                     agent_run_id=agent_run_id,
+                    offset_ms=offset_ms,
                 )
             )
     except Exception:  # logging must never break the customer flow

@@ -125,18 +125,18 @@ def run_agent(
             try:
                 turn = provider.chat(convo, specs, min(remaining, turn_timeout), kind, think)
             except ProviderFailure as exc:
-                _invocation(kind, prompt_version, provider, convo, "timeout" if exc.kind == "timeout" else "error", str(exc), turn_started, None, run_id)
+                _invocation(kind, prompt_version, provider, convo, "timeout" if exc.kind == "timeout" else "error", str(exc), turn_started, None, run_id, started)
                 status = "timeout" if exc.kind == "timeout" else "error"
                 return _end(run_id, status, started, totals, ctx, error=str(exc))
             totals["in"] += turn.input_tokens or 0
             totals["out"] += turn.output_tokens or 0
             calls = turn.tool_calls or _json_tool_calls(turn)
-            _invocation(kind, prompt_version, provider, convo, "valid", None, turn_started, turn, run_id)
+            _invocation(kind, prompt_version, provider, convo, "valid", None, turn_started, turn, run_id, started)
 
             if not calls:
                 text = (turn.text or "").strip()
                 if text:
-                    _step(run_id, totals, "message", None, {}, {"text": text[:STORED_CHARS]}, True, turn_started)
+                    _step(run_id, totals, "message", None, {}, {"text": text[:STORED_CHARS]}, True, turn_started, started)
                     return _end(run_id, "done", started, totals, ctx, text=text)
                 invalid += 1
                 if invalid > 2:
@@ -150,7 +150,7 @@ def run_agent(
                 if tool is None:
                     invalid += 1
                     _reply(convo, call, {"error": f"Unknown tool {call.name!r}. Use only: {', '.join(by_name)}."})
-                    _step(run_id, totals, "error", call.name, call.args, {"error": "unknown tool"}, False, turn_started)
+                    _step(run_id, totals, "error", call.name, call.args, {"error": "unknown tool"}, False, turn_started, started)
                     continue
                 try:
                     args = tool.args.model_validate(call.args)
@@ -158,10 +158,10 @@ def run_agent(
                     invalid += 1
                     detail = "; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors())[:600]
                     _reply(convo, call, {"error": f"Invalid arguments: {detail}"})
-                    _step(run_id, totals, "error", call.name, call.args, {"error": detail}, False, turn_started)
+                    _step(run_id, totals, "error", call.name, call.args, {"error": detail}, False, turn_started, started)
                     continue
                 if tool.final:
-                    _step(run_id, totals, "final", tool.name, args.model_dump(mode="json"), {}, True, turn_started)
+                    _step(run_id, totals, "final", tool.name, args.model_dump(mode="json"), {}, True, turn_started, started)
                     return _end(run_id, "done", started, totals, ctx, final=args)
                 if on_step:
                     on_step(tool.name)
@@ -175,7 +175,7 @@ def run_agent(
                     log.exception("agent tool failed", extra={"tool": tool.name})
                     result, ok = {"error": f"{tool.name} failed: {exc.__class__.__name__}"}, False
                 _reply(convo, call, result)
-                _step(run_id, totals, "tool", tool.name, args.model_dump(mode="json"), _summary(result), ok, tool_started)
+                _step(run_id, totals, "tool", tool.name, args.model_dump(mode="json"), _summary(result), ok, tool_started, started)
             if invalid > 2:
                 return _end(run_id, "error", started, totals, ctx, error="too many invalid tool calls")
         return _end(run_id, "step_limit", started, totals, ctx, error=f"stopped after {max_steps} steps")
@@ -231,12 +231,12 @@ def _summary(result: Any) -> dict[str, Any]:
 
 
 def _invocation(kind: str, prompt_version: str, provider: Any, convo: list[dict[str, Any]], result: str, reason: str | None,
-                started: float, turn: AgentTurn | None, run_id: str) -> None:
+                started: float, turn: AgentTurn | None, run_id: str, run_started: float) -> None:
     latency = int((time.perf_counter() - started) * 1000)
     digest = sha256_hex(json.dumps(convo[-3:], default=str)[:20000])
     tokens = (turn.input_tokens, turn.output_tokens) if turn else (None, None)
     _record(kind, prompt_version, provider.name, provider.model, digest, result, reason, latency, tokens, False, result != "valid",
-            agent_run_id=run_id)
+            agent_run_id=run_id, offset_ms=int((started - run_started) * 1000))
 
 
 def _start_run(run_id: str, kind: str, prompt_version: str, model: str, session_id: str | None, user_id: str | None,
@@ -248,12 +248,12 @@ def _start_run(run_id: str, kind: str, prompt_version: str, model: str, session_
 
 
 def _step(run_id: str, totals: dict[str, int], kind: str, tool: str | None, args: dict[str, Any], result: dict[str, Any],
-          ok: bool, started: float) -> None:
+          ok: bool, started: float, run_started: float) -> None:
     totals["steps"] += 1
     try:
         with transaction() as db:
             db.add(AgentStep(run_id=run_id, idx=totals["steps"], kind=kind, tool=tool, args=redact_obj(args), result=redact_obj(result),
-                             ok=ok, latency_ms=int((time.perf_counter() - started) * 1000)))
+                             ok=ok, latency_ms=int((time.perf_counter() - started) * 1000), offset_ms=int((started - run_started) * 1000)))
     except Exception:  # logging must never break the run
         log.exception("failed to record agent step")
 
@@ -280,12 +280,15 @@ def _end(run_id: str, status: str, started: float, totals: dict[str, int], ctx: 
     return AgentResult(run_id=run_id, status=status, final=final, text=text, error=error, ctx=ctx)
 
 
-def run_view(run: AgentRun, steps: list[AgentStep]) -> dict[str, Any]:
+def run_view(run: AgentRun, steps: list[AgentStep], turns: list[Any] | None = None) -> dict[str, Any]:
+    """A run with its steps and (when given) its model turns, each placed on the run's timeline by ``offset_ms``."""
     return {
         "id": run.id, "kind": run.kind, "status": run.status, "model": run.model, "prompt_version": run.prompt_version,
         "subject_type": run.subject_type, "subject_id": run.subject_id, "steps": run.steps, "latency_ms": run.latency_ms,
         "input_tokens": run.input_tokens, "output_tokens": run.output_tokens, "error": run.error,
         "created_at": clock.iso(run.created_at), "finished_at": clock.iso(run.finished_at) if run.finished_at else None,
         "trace": [{"idx": st.idx, "kind": st.kind, "tool": st.tool, "args": st.args, "result": st.result, "ok": st.ok,
-                   "latency_ms": st.latency_ms} for st in steps],
+                   "latency_ms": st.latency_ms, "offset_ms": st.offset_ms} for st in steps],
+        "turns": [{"idx": i, "offset_ms": t.offset_ms, "latency_ms": t.latency_ms, "input_tokens": t.input_tokens,
+                   "output_tokens": t.output_tokens, "result": t.validation_result} for i, t in enumerate(turns or [], start=1)],
     }

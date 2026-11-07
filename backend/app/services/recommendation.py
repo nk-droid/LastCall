@@ -163,24 +163,30 @@ def _no_match(intent: Intent, items: list[CatalogItem], checks: list[ItemCheck],
     cur = merchant.currency
     reasons: list[str] = []
     suggestions: list[dict[str, Any]] = []
+    code = "other"  # pickup | no_surplus | dietary | servings | budget | other
     active = [i for i in items if i.sellable]
     eligible = [c.item for c in checks if c.eligible]
     if not window_slots:
+        code = "pickup"
         reasons.append("No pickup slots are available in your pickup window.")
         if all_bookable:
             suggestions.append({"action": "set_pickup", "label": f"Pick up {pickup.slot_label(all_bookable[0], merchant.timezone)}",
                                 "value": [clock.hhmm(all_bookable[0].starts_at, merchant.timezone), clock.hhmm(all_bookable[0].ends_at, merchant.timezone)],
                                 "date": all_bookable[0].starts_at.astimezone(ZoneInfo(merchant.timezone)).date().isoformat()})
     elif not active:
+        code = "no_surplus"
         reasons.append("This shop has no surplus items listed right now.")
     elif not eligible:
         dietary_blocked = [c for c in checks if c.item.sellable and any("verified" in r or "Contains" in r or "May contain" in r for r in c.reasons)]
         if intent.exclusions or intent.dietary:
             if len(dietary_blocked) == len([c for c in checks if c.item.sellable]):
+                code = "dietary"
                 reasons.append(f"No items available today are merchant-verified to meet your dietary needs ({exclusion_phrase(intent)}).")
             else:
+                code = "pickup"
                 reasons.append("Items that meet your dietary needs aren't available for your pickup time.")
         else:
+            code = "pickup"
             reasons.append("No items are available for your pickup time.")
         suggestions.append({"action": "browse", "label": "Browse all items with full allergen details"})
     else:
@@ -188,10 +194,12 @@ def _no_match(intent: Intent, items: list[CatalogItem], checks: list[ItemCheck],
         if cost is None:
             servings = sum(i.available * i.servings for i in eligible)
             people = int(servings // max(1e-9, ctx.min_servings / ctx.party_size))
+            code = "servings"
             reasons.append(f"Only about {servings:g} eligible servings are left today, not enough for {ctx.party_size} people.")
             if people >= 1:
                 suggestions.append({"action": "set_party_size", "label": f"Plan for {people} {'person' if people == 1 else 'people'}", "value": people})
         elif intent.budget_minor is not None and cost > intent.budget_minor:
+            code = "budget"
             reasons.append(f"The lowest-cost bundle for {ctx.party_size} people is {_fmt(cost, cur)}, above your {_fmt(intent.budget_minor, cur)} budget.")
             suggestions.append({"action": "set_budget", "label": f"Raise budget to {_fmt(cost, cur)}", "value": cost})
             suggestions.append({"action": "set_party_size", "label": f"Plan for {max(1, ctx.party_size - 1)} people", "value": max(1, ctx.party_size - 1)})
@@ -199,7 +207,8 @@ def _no_match(intent: Intent, items: list[CatalogItem], checks: list[ItemCheck],
             reasons.append("No combination of available items fits every constraint.")
     if not any(s["action"] == "browse" for s in suggestions):
         suggestions.append({"action": "browse", "label": "See available items"})
-    return {"headline": reasons[0] if reasons else "No bundle fits your request right now.", "reasons": reasons, "suggestions": suggestions}
+    return {"headline": reasons[0] if reasons else "No bundle fits your request right now.", "reasons": reasons, "suggestions": suggestions,
+            "code": code}
 
 
 @dataclass

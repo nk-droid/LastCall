@@ -34,7 +34,7 @@ from app.db import transaction
 from app.domain import Exclusion, Intent
 from app.errors import Conflict, NotFound, Unprocessable
 from app.ids import new_id
-from app.models import Conversation, Merchant, User, Watch, WatchMatch
+from app.models import Conversation, Merchant, Product, User, Watch, WatchMatch
 from app.money import format_money
 from app.observability import redact
 from app.services import intent as intent_service
@@ -46,6 +46,8 @@ log = logging.getLogger(__name__)
 
 MAX_ACTIVE = 5
 LIFETIME = timedelta(days=7)
+ALERT_DAYS = 14
+ALERT_LIMIT = 20
 QUIET = timedelta(hours=24)  # at most one email per watch per day
 KEEP_ENDED = timedelta(days=30)
 SCAN_LIMIT = 500
@@ -178,6 +180,70 @@ def open_match(match_id: str, session_id: str) -> dict[str, Any]:
     return {"status": "ready", "quote_id": quote["id"], "changed": same is None, "shop": shop}
 
 
+# --------------------------------------------------------------------------- alerts inbox
+
+
+def _sent(user: SessionUser, since):
+    """Matches actually sent to this shopper (not the candidates the judge passed over), newest first."""
+    return (select(WatchMatch).join(Watch, Watch.id == WatchMatch.watch_id)
+            .where(Watch.user_id == user.user_id, WatchMatch.email_message_id.is_not(None), WatchMatch.created_at >= since))
+
+
+def alerts(user: SessionUser) -> dict[str, Any]:
+    """The shopper's watch matches as an inbox: each with its bundle, price and pickup, plus the unread count for the bell."""
+    since = clock.now() - timedelta(days=ALERT_DAYS)
+    with transaction() as db:
+        rows = db.scalars(_sent(user, since).where(WatchMatch.dismissed_at.is_(None)).order_by(WatchMatch.created_at.desc()).limit(ALERT_LIMIT)).all()
+        watches = {w.id: w for w in db.scalars(select(Watch).where(Watch.id.in_({r.watch_id for r in rows}))).all()} if rows else {}
+        shops = {m.id: m for m in db.scalars(select(Merchant).where(Merchant.id.in_({r.merchant_id for r in rows}))).all()} if rows else {}
+        skus = {(r.merchant_id, part.split(":")[0]) for r in rows for part in r.signature.split("|") if part}
+        names = {(p.merchant_id, p.sku): p.name for p in db.scalars(select(Product).where(
+            Product.merchant_id.in_({m for m, _ in skus}), Product.sku.in_({s for _, s in skus})))} if skus else {}
+        items = []
+        for r in rows:
+            shop, watch = shops[r.merchant_id], watches.get(r.watch_id)
+            lines = []
+            for part in r.signature.split("|"):
+                sku, _, qty = part.partition(":")
+                if sku:
+                    lines.append({"name": names.get((r.merchant_id, sku), sku), "qty": int(qty or 1)})
+            items.append({
+                "id": r.id, "shop": {"slug": shop.slug, "name": shop.name}, "label": r.label, "lines": lines,
+                "summary": r.summary, "total_minor": r.total_minor, "currency": r.currency, "pickup_label": r.pickup_label,
+                "created_at": clock.iso(r.created_at), "seen": r.seen_at is not None, "opened": r.opened_at is not None,
+                "watch": {"id": watch.id, "request": watch.text_redacted, "status": watch.status} if watch else None,
+            })
+    return {"alerts": items, "unread": unread_count(user)}
+
+
+def unread_count(user: SessionUser) -> int:
+    since = clock.now() - timedelta(days=ALERT_DAYS)
+    with transaction() as db:
+        return db.scalar(select(func.count()).select_from(_sent(user, since).where(
+            WatchMatch.dismissed_at.is_(None), WatchMatch.seen_at.is_(None), WatchMatch.opened_at.is_(None)).subquery())) or 0
+
+
+def mark_seen(user: SessionUser) -> dict[str, Any]:
+    now = clock.now()
+    with transaction() as db:
+        ids = db.scalars(_sent(user, now - timedelta(days=ALERT_DAYS)).where(WatchMatch.seen_at.is_(None)).with_only_columns(WatchMatch.id)).all()
+        if ids:
+            db.execute(update(WatchMatch).where(WatchMatch.id.in_(ids)).values(seen_at=now))
+    return {"unread": 0}
+
+
+def dismiss(user: SessionUser, match_id: str) -> dict[str, Any]:
+    """'Not this': hide the alert. The watch keeps going, and the same bundle is never sent again."""
+    with transaction() as db:
+        match = db.get(WatchMatch, match_id, with_for_update=True)
+        watch = db.get(Watch, match.watch_id) if match else None
+        if match is None or watch is None or watch.user_id != user.user_id or match.email_message_id is None:
+            raise NotFound("Alert not found", code="alert_missing")
+        match.dismissed_at = match.dismissed_at or clock.now()
+        match.seen_at = match.seen_at or clock.now()
+    return {"dismissed": True}
+
+
 # --------------------------------------------------------------------------- scanning
 
 
@@ -239,7 +305,7 @@ def _notify(watch: Watch, candidates: list[_Candidate]) -> bool:
             row = WatchMatch(id=new_id("wmt"), watch_id=watch.id, merchant_id=cand.merchant.id, signature=cand.sig, label=cand.opt["label"][:80],
                              summary=summary if is_pick else "", summary_source=source if is_pick else "skipped",
                              total_minor=cand.opt["totals"]["total_minor"], currency=cand.opt["totals"]["currency"],
-                             pickup_label=cand.pickup_label[:80], agent_run_id=run_id)
+                             pickup_label=cand.pickup_label[:80], agent_run_id=run_id, created_at=clock.now())
             try:
                 with db.begin_nested():
                     db.add(row)

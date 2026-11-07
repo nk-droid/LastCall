@@ -14,14 +14,14 @@ import {
   ScheduleRounded,
   StorefrontRounded,
 } from "@mui/icons-material";
-import { Box, Button, Card, CardActionArea, CardContent, Chip, Grid, Link, Stack, Typography } from "@mui/material";
+import { Box, Button, Card, CardActionArea, CardContent, Grid, Link, Stack, Typography } from "@mui/material";
 import { useId } from "react";
 
-import { Avatar, useAccount } from "@/components/account";
-import { ConciergePanel } from "@/components/concierge/concierge";
+import { useAccount } from "@/components/account";
+import { ConciergeHome } from "@/components/concierge/concierge-home";
 import { ProductImage } from "@/components/product-image";
 import { PageShell } from "@/components/site";
-import { ErrorState, IconBadge, LoadingBlock, PageHeader, StatusChip, brand, surface, shadows, type Icon } from "@/components/ui";
+import { ErrorState, IconBadge, LoadingBlock, StatusChip, brand, shadows, type Icon } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { money, plural } from "@/lib/format";
 import type { MerchantCard, MyOrdersResponse, PickupStatus } from "@/lib/types";
@@ -30,40 +30,16 @@ import { useResource } from "@/lib/use-api";
 import { OrderStatusChip } from "./orders/order-status";
 
 export function Marketplace() {
-  const { account, version } = useAccount();
-  const user = account?.user ?? null;
+  const { version } = useAccount();
   const shops = useResource((signal) => api<{ merchants: MerchantCard[]; as_of: string }>("/api/merchants", { signal }), [], { pollMs: 60_000 });
   const list = shops.data?.merchants ?? [];
   const openNow = list.filter((s) => s.pickup.state === "open").length;
 
   return (
     <PageShell>
-      <PageHeader
-        eyebrow="Pickup-only surplus marketplace"
-        title="Today's surplus, nearby"
-        subtitle="Pick a local shop and get a verified bundle below menu price."
-        chips={
-          user ? (
-            <Chip avatar={<Avatar initials={user.initials} size={24} />} label={`Shopping as ${user.name}`}
-              sx={{ ...surface.raisedSm, fontWeight: 600, height: 36, pl: 0.5, pr: 0.5 }} />
-          ) : undefined
-        }
-      />
+      <ConciergeHome shopsOpen={shops.data ? openNow : undefined} />
 
       <ActiveOrders key={version} />
-
-      <Card component="section" aria-labelledby="ask-heading" sx={{ mb: { xs: 5, sm: 6 } }}>
-        <CardContent sx={{ p: { xs: "20px", sm: "28px" }, "&:last-child": { pb: { xs: "20px", sm: "28px" } } }}>
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", mb: 2 }}>
-            <IconBadge tone="success"><AutoAwesomeRounded /></IconBadge>
-            <Box>
-              <Typography id="ask-heading" variant="h3" component="h2">Ask LastCall</Typography>
-              <Typography variant="body2" color="text.secondary">Tell it what you need. It checks every shop&apos;s surplus and brings back bundles that fit.</Typography>
-            </Box>
-          </Stack>
-          <ConciergePanel />
-        </CardContent>
-      </Card>
 
       <Box component="section" aria-labelledby="shops-heading" sx={{ mb: { xs: 5, sm: 7 } }}>
         <Stack direction="row" spacing={1.5} useFlexGap sx={{ alignItems: "baseline", flexWrap: "wrap", mb: 2.5 }}>

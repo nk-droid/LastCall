@@ -241,3 +241,40 @@ def test_ops_lists_agent_runs_with_their_steps(fixture_llm, app):
     assert [s["tool"] for s in runs[0]["trace"]] == ["add", "answer"]
     assert ok(admin.get(f"/api/ops/agent-runs/{result.run_id}"))["steps"] == 2
     assert new_client(app).get("/api/ops/agent-runs").status_code == 401
+
+
+def test_ops_places_model_turns_and_tool_calls_on_the_run_timeline(fixture_llm, app):
+    def slow(reply):
+        def turn(_messages):
+            time.sleep(0.05)
+            return reply
+        return turn
+
+    def slow_add(ctx, args: AddArgs):
+        time.sleep(0.03)
+        return {"sum": args.a + args.b}
+
+    fixture_llm.queue(TASK, slow(call("add", a=2, b=3)), slow(call("answer", value=5)))
+    result = _run(tools=_tools(add=slow_add))
+    fixture_llm.queue(TASK, ProviderFailure("timeout", "model took too long"))
+    _run(tools=_tools())
+    accounts.ensure_platform_admin(email="ops@lastcall.app", name="LastCall Ops", password="ops-password-123")
+    admin = new_client(app)
+    ok(admin.post("/api/auth/login", json={"email": "ops@lastcall.app", "password": "ops-password-123"}))
+
+    run = ok(admin.get(f"/api/ops/agent-runs/{result.run_id}"))
+    first, second = run["turns"]
+    add, answer = run["trace"]
+    # turn 1 → add → turn 2, which ends the run with the final tool
+    assert first["offset_ms"] < 10 and first["latency_ms"] >= 50
+    assert add["offset_ms"] >= first["offset_ms"] + first["latency_ms"] and add["latency_ms"] >= 30
+    assert second["offset_ms"] >= add["offset_ms"] + add["latency_ms"]
+    assert answer["kind"] == "final" and answer["offset_ms"] == second["offset_ms"]
+    assert second["offset_ms"] + second["latency_ms"] <= run["latency_ms"]
+    assert (first["input_tokens"], first["output_tokens"], first["result"]) == (10, 10, "valid")
+
+    listing = ok(admin.get(f"/api/ops/agent-runs?kind={TASK}"))
+    assert [len(r["turns"]) for r in listing["runs"]] == [1, 2]
+    stats = listing["stats"]
+    assert (stats["runs"], stats["failed"], stats["input_tokens"]) == (2, 1, 20)
+    assert stats["median_ms"] >= 0

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -31,9 +31,9 @@ from app.ids import new_id
 from app.models import Conversation, Merchant
 from app.money import format_money
 from app.observability import redact
+from app.services import analytics, pickup, recommendation
 from app.services import intent as intent_service
-from app.services import pickup, recommendation
-from app.services.catalog import get_merchant, list_merchants
+from app.services.catalog import get_merchant, list_merchants, policy
 
 log = logging.getLogger(__name__)
 
@@ -130,18 +130,21 @@ def run_turn(conversation_id: str) -> None:
             scope = db.get(Merchant, conv.scope_merchant_id) if conv.scope_merchant_id else None
             session_id, user_id, messages = conv.session_id, conv.user_id, list(conv.messages)
             scope_ref = (scope.slug, scope.name) if scope else None
-            today = clock.local_date(scope.timezone if scope else "America/Los_Angeles").strftime("%A, %B %-d")
+            zone = scope.timezone if scope else "America/Los_Angeles"
+            today = clock.local_date(zone).strftime("%A, %B %-d")
+            now_label = clock.display_time(clock.now(), zone)
         state: dict[str, Any] = {
-            "conversation_id": conversation_id, "scope": scope_ref, "options": {}, "checked": [], "shops": {},
+            "conversation_id": conversation_id, "scope": scope_ref, "options": {}, "checked": [], "shops": {}, "merchant_ids": {}, "requests": {}, "board": {}, "understood": {}, "listed": None,
             "shopper_text": " ".join(m["text"] for m in messages if m["role"] == "user")[-600:],
         }
         result = run_agent(
-            kind="concierge", prompt_version=prompts.CONCIERGE_PROMPT_VERSION, system=prompts.concierge_system(today, scope_ref),
+            kind="concierge", prompt_version=prompts.CONCIERGE_PROMPT_VERSION, system=prompts.concierge_system(today, scope_ref, now_label),
             messages=[{"role": m["role"], "content": _history_text(m)} for m in messages[-HISTORY:] if m["role"] in ("user", "assistant")],
             tools=_tools(), session_id=session_id, user_id=user_id, subject=("conversation", conversation_id), state=state,
         )
         reply = _agent_reply(result, state) or _rules_reply(state, session_id)
         reply["run_id"] = result.run_id
+        _record_suggestions(state, session_id, reply)
     except Exception:  # the chat must always get an answer
         log.exception("concierge turn failed", extra={"conversation_id": conversation_id})
         reply, result = _message("Sorry, something went wrong on our side. Please try again.", source="system"), None
@@ -170,8 +173,9 @@ def _list_shops(ctx, args: ListShopsArgs) -> dict[str, Any]:
     _progress(ctx.state, "Looking at today's shops")
     now = clock.now()
     with transaction() as db:
-        cards = [merchant_card(db, m, now) for m in list_merchants(db)]
+        cards = [merchant_card(db, m, now) for m in _listed(db, ctx.state["scope"])]
     shops = []
+    ctx.state["listed"] = len(cards)
     for c in cards:
         ctx.state["shops"][c["slug"]] = c["name"]
         shops.append({
@@ -199,6 +203,8 @@ def _search(state: dict[str, Any], session_id: str, slug: str, args: FindBundles
             merchant = get_merchant(db, slug)
         except NotFound:
             raise ToolError(f"There is no open shop {slug!r}. Use a slug from list_shops.") from None
+        if not state["scope"] and not policy(merchant, "concierge_listed", True):
+            raise ToolError(f"There is no open shop {slug!r}. Use a slug from list_shops.")
         db.expunge(merchant)
     if slug not in state["checked"]:
         state["checked"].append(slug)
@@ -232,7 +238,102 @@ def _search(state: dict[str, Any], session_id: str, slug: str, args: FindBundles
     result: dict[str, Any] = {"shop": merchant.name, "applied": applied, "options": options}
     if not options and proposal.get("no_match"):
         result["no_match"] = {"headline": proposal["no_match"].get("headline"), "suggestions": proposal["no_match"].get("suggestions", [])[:3]}
+    # What the shop sees on its Assistant page: the request as structured facts (never the shopper's words).
+    request = _request(intent, merchant)
+    state["merchant_ids"][slug] = merchant.id
+    state["requests"][slug] = request
+    # For the reply's "how we picked this": what was applied, what this shop offered, and why it was passed on.
+    state["understood"][slug] = _understood(parsed.fields, request)
+    risky = [e["name"] for e in proposal.get("excluded", []) if any(_RISKY.search(r) for r in e.get("reasons", []))]
+    state["board"][slug] = {
+        "slug": slug, "name": merchant.name, "options": len(options), "currency": merchant.currency,
+        "from_minor": min((state["options"][o["option_id"]]["total_minor"] for o in options), default=None),
+        "reason": result["no_match"]["headline"] if "no_match" in result else (None if options else "No bundle fits right now."),
+        "left_out": risky[:8], "left_out_count": len(risky),
+    }
+    props: dict[str, Any] = {"conversation_id": state["conversation_id"], "options": len(options), "request": request}
+    if not options:
+        props["gap"] = (proposal.get("no_match") or {}).get("code", "other")
+    try:
+        with transaction() as db:
+            analytics.track(db, "concierge_checked", merchant_id=merchant.id, session_id=session_id, entity_type="proposal",
+                            entity_id=proposal["proposal_id"], properties=props)
+    except Exception:  # analytics must never break the chat
+        log.exception("failed to record concierge check")
     return result
+
+
+def _request(intent: dict[str, Any], merchant: Merchant) -> dict[str, Any]:
+    window = intent.get("pickup_window")
+    day = date.fromisoformat(intent["pickup_date"]) if intent.get("pickup_date") else clock.local_date(merchant.timezone)
+    if window and tuple(window) == pickup.window_for(merchant, day):
+        window = None  # the shop's whole pickup window: the shopper didn't ask for a time
+    return {
+        "party_size": intent.get("party_size"), "budget_minor": intent.get("budget_minor"), "currency": intent.get("currency", "USD"),
+        "exclusions": sorted({e["code"] for e in intent.get("exclusions", [])}), "dietary": list(intent.get("dietary", [])),
+        "preferences": list(intent.get("preferences", []))[:3], "occasion": intent.get("occasion"), "pickup_window": window,
+    }
+
+
+_RISKY = re.compile(r"^(Contains|May contain|Allergen information not merchant-verified|Not merchant-verified)")
+EDITABLE = {"party_size", "budget", "pickup"}
+
+
+def _understood(fields: list[dict[str, Any]], request: dict[str, Any]) -> list[dict[str, Any]]:
+    """The parsed request as chips: allergens and diets are strict (always applied); size, budget and time can be changed."""
+    out = []
+    for f in fields:
+        key = f["key"]
+        if key == "note":
+            continue
+        label = f["label"]
+        if key == "pickup" and not request.get("pickup_window"):
+            label = "Any pickup time"
+        elif key == "budget" and request.get("budget_minor"):
+            label = f"Under {format_money(request['budget_minor'], request.get('currency', 'USD'))}"
+        out.append({"key": key, "label": label, "strict": key.startswith(("exclusion:", "dietary:")), "editable": key in EDITABLE})
+    return out
+
+
+def _details(state: dict[str, Any], cards: list[dict[str, Any]]) -> dict[str, Any] | None:
+    board: dict[str, dict[str, Any]] = state.get("board") or {}
+    if not board:
+        return None
+    top = cards[0]["shop"]["slug"] if cards else None
+    shown = {c["shop"]["slug"] for c in cards}
+    basis = top if top in state["understood"] else next(reversed(state["understood"]), None)
+    first = {}
+    for c in cards:
+        first.setdefault(c["shop"]["slug"], c)
+    shops = [{**entry, "top": entry["slug"] == top, "shown": entry["slug"] in shown,
+              "shown_total_minor": first[entry["slug"]]["total_minor"] if entry["slug"] in first else None,
+              "shown_units": first[entry["slug"]]["units"] if entry["slug"] in first else None} for entry in board.values()]
+    return {"understood": state["understood"].get(basis, []), "shops": shops, "listed": state.get("listed")}
+
+
+def _listed(db, scope: tuple[str, str] | None) -> list[Merchant]:
+    """Shops the assistant may suggest: every live shop that hasn't opted out (a chat on one storefront is that shop's own)."""
+    merchants = list_merchants(db)
+    return merchants if scope else [m for m in merchants if policy(m, "concierge_listed", True)]
+
+
+def _record_suggestions(state: dict[str, Any], session_id: str, reply: dict[str, Any]) -> None:
+    """One event per bundle shown to the shopper, on the shop's own timeline."""
+    try:
+        with transaction() as db:
+            for card in reply.get("cards", []):
+                slug = card["shop"]["slug"]
+                merchant_id = state["merchant_ids"].get(slug)
+                if not merchant_id:
+                    continue
+                analytics.track(db, "concierge_suggested", merchant_id=merchant_id, session_id=session_id, entity_type="proposal",
+                                entity_id=card["proposal_id"], properties={
+                                    "conversation_id": state["conversation_id"], "option_key": card["option_key"], "label": card["label"],
+                                    "units": card["units"], "total_minor": card["total_minor"], "currency": card["currency"],
+                                    "request": state["requests"].get(slug, {}), "source": reply.get("source"),
+                                })
+    except Exception:  # analytics must never break the chat
+        log.exception("failed to record concierge suggestions")
 
 
 def _controls(args: FindBundlesArgs, merchant: Merchant) -> intent_service.Controls:
@@ -313,7 +414,7 @@ def _rules_reply(state: dict[str, Any], session_id: str) -> dict[str, Any]:
     else:
         with transaction() as db:
             now = clock.now()
-            cards = [merchant_card(db, m, now) for m in list_merchants(db)]
+            cards = [merchant_card(db, m, now) for m in _listed(db, None)]
         slugs = [c["slug"] for c in cards if c["pickup"]["state"] == "open" and c["surplus"]["items_available"]][:MAX_SHOPS]
     for slug in slugs:
         try:
@@ -335,7 +436,11 @@ def _reply(text: str, cards: list[dict[str, Any]], questions: list[str], state: 
             clean = f"Here {'is an option' if len(cards) == 1 else f'are {len(cards)} options'} from {names} that fit your request."
         elif not questions:
             clean = "I couldn't find a bundle that fits right now. Try a later pickup, a larger budget or fewer people."
-    return _message(clean, source=source, cards=cards, questions=questions)
+    message = _message(clean, source=source, cards=cards, questions=questions)
+    details = _details(state, cards)
+    if details:
+        message["details"] = details
+    return message
 
 
 def _message(text: str, *, source: str, cards: list[dict[str, Any]] | None = None, questions: list[str] | None = None) -> dict[str, Any]:

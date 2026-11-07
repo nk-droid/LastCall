@@ -50,5 +50,8 @@ class WatchMatch(Base):
     agent_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     email_message_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The shopper's alerts inbox: when they saw it there, and whether they said "not this".
+    seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     quote_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created_at: Mapped[datetime] = created_col()
