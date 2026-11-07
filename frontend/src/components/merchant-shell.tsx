@@ -3,6 +3,7 @@
 import {
   AddBusinessRounded,
   AdminPanelSettingsRounded,
+  AutoAwesomeRounded,
   DashboardRounded,
   GroupsRounded,
   InsightsRounded,
@@ -50,6 +51,7 @@ export function hasRole(staff: Staff | null, role: Role): boolean {
 
 const NAV: { href: string; label: string; icon: typeof DashboardRounded; role: Role }[] = [
   { href: "/merchant", label: "Today", icon: DashboardRounded, role: "staff" },
+  { href: "/merchant/assistant", label: "Assistant", icon: AutoAwesomeRounded, role: "staff" },
   { href: "/merchant/orders", label: "Orders", icon: ReceiptLongRounded, role: "staff" },
   { href: "/merchant/inventory", label: "Inventory", icon: Inventory2Rounded, role: "staff" },
   { href: "/merchant/insights", label: "Insights", icon: InsightsRounded, role: "staff" },
