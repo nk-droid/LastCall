@@ -575,6 +575,17 @@ export type ConciergeMessage = {
   cards?: ConciergeCard[];
   questions?: string[];
   source?: "agent" | "rules" | "system";
+  details?: ConciergeDetails;
+};
+
+/** What a reply was based on: the request as understood, and every shop checked this turn. */
+export type ConciergeDetails = {
+  understood: { key: string; label: string; strict: boolean; editable: boolean }[];
+  shops: {
+    slug: string; name: string; options: number; currency: string; from_minor: number | null; reason: string | null;
+    left_out: string[]; left_out_count: number; top: boolean; shown: boolean; shown_total_minor: number | null; shown_units: number | null;
+  }[];
+  listed: number | null;
 };
 
 export type Conversation = {
@@ -597,6 +608,21 @@ export type Watch = {
   last_notified_at: string | null;
   matches_sent: number;
   created_at: string;
+};
+
+export type WatchAlert = {
+  id: string;
+  shop: { slug: string; name: string };
+  label: string;
+  lines: { name: string; qty: number }[];
+  summary: string;
+  total_minor: number;
+  currency: string;
+  pickup_label: string;
+  created_at: string;
+  seen: boolean;
+  opened: boolean;
+  watch: { id: string; request: string; status: string } | null;
 };
 
 // ----------------------------------------------------------------------------- close-out plan (agent)
