@@ -130,13 +130,15 @@ def run_turn(conversation_id: str) -> None:
             scope = db.get(Merchant, conv.scope_merchant_id) if conv.scope_merchant_id else None
             session_id, user_id, messages = conv.session_id, conv.user_id, list(conv.messages)
             scope_ref = (scope.slug, scope.name) if scope else None
-            today = clock.local_date(scope.timezone if scope else "America/Los_Angeles").strftime("%A, %B %-d")
+            zone = scope.timezone if scope else "America/Los_Angeles"
+            today = clock.local_date(zone).strftime("%A, %B %-d")
+            now_label = clock.display_time(clock.now(), zone)
         state: dict[str, Any] = {
             "conversation_id": conversation_id, "scope": scope_ref, "options": {}, "checked": [], "shops": {}, "merchant_ids": {}, "requests": {},
             "shopper_text": " ".join(m["text"] for m in messages if m["role"] == "user")[-600:],
         }
         result = run_agent(
-            kind="concierge", prompt_version=prompts.CONCIERGE_PROMPT_VERSION, system=prompts.concierge_system(today, scope_ref),
+            kind="concierge", prompt_version=prompts.CONCIERGE_PROMPT_VERSION, system=prompts.concierge_system(today, scope_ref, now_label),
             messages=[{"role": m["role"], "content": _history_text(m)} for m in messages[-HISTORY:] if m["role"] in ("user", "assistant")],
             tools=_tools(), session_id=session_id, user_id=user_id, subject=("conversation", conversation_id), state=state,
         )

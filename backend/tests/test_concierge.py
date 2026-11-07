@@ -216,3 +216,11 @@ def test_a_turn_that_died_with_its_process_is_released(client, fixture_llm):
         db.execute(update(Conversation).values(status="working", updated_at=clock.now() - timedelta(minutes=5)))
     recovered = ok(client.get(f"/api/concierge/{convo['id']}"))
     assert recovered["status"] == "idle" and "took too long" in recovered["messages"][-1]["text"]
+
+
+def test_the_agent_knows_the_time_and_is_told_not_to_guess_a_pickup_time(client, fixture_llm):
+    fixture_llm.queue(TASK, turn(call("respond", message="", questions=["How many people?"])))
+    send(client, "Something sweet")
+    system = fixture_llm.calls[0]["messages"][0]["content"]
+    assert f"it is {clock.display_time(clock.now(), 'America/Los_Angeles')} now" in system
+    assert "leave them out unless the shopper gave a pickup time" in system
