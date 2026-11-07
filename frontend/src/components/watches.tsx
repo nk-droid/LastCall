@@ -15,16 +15,17 @@ import type { Watch } from "@/lib/types";
 import { useResource } from "@/lib/use-api";
 
 /** Under a concierge reply: save what the shopper asked for as a watch. */
-export function WatchThis({ conversationId, hasCards }: { conversationId: string; hasCards: boolean }) {
+export function WatchThis({ conversationId, hasCards, variant = "inline" }: { conversationId: string; hasCards: boolean; variant?: "inline" | "bar" }) {
   const { account } = useAccount();
   const announce = useAnnounce();
   const [saved, setSaved] = useState<Watch | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lead = hasCards ? "Want more like this later?" : "Nothing fits right now.";
+  const pl = variant === "bar" ? 0 : 4.5;
   if (!account?.user) {
     return (
-      <Typography variant="caption" color="text.secondary" sx={{ pl: 4.5 }}>
+      <Typography variant="caption" color="text.secondary" sx={{ pl }}>
         {lead}{" "}
         <Link href={signInHref(typeof window === "undefined" ? "/" : window.location.pathname)}>Sign in</Link> and we&apos;ll email you when a shop lists one.
       </Typography>
@@ -32,7 +33,7 @@ export function WatchThis({ conversationId, hasCards }: { conversationId: string
   }
   if (saved) {
     return (
-      <Stack direction="row" spacing={1} sx={{ alignItems: "center", pl: 4.5 }} role="status">
+      <Stack direction="row" spacing={1} sx={{ alignItems: "center", pl }} role="status">
         <NotificationsActiveRounded aria-hidden sx={{ fontSize: 18, color: brand.leaf }} />
         <Typography variant="body2" sx={{ color: brand.forest }}>
           Watching. We&apos;ll email you once a day at most when a shop lists a bundle like this. <Link href="/account#watches">Manage</Link>
@@ -54,7 +55,7 @@ export function WatchThis({ conversationId, hasCards }: { conversationId: string
     }
   }
   return (
-    <Stack direction="row" spacing={1.25} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap", pl: 4.5 }}>
+    <Stack direction="row" spacing={1.25} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap", pl, justifyContent: variant === "bar" ? "space-between" : "flex-start" }}>
       <Typography variant="body2" color="text.secondary">{lead}</Typography>
       <Button size="small" variant="outlined" color="inherit" startIcon={<NotificationsActiveRounded />} loading={busy} onClick={save}>
         Watch for this

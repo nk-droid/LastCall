@@ -7,6 +7,9 @@ export const SHOWCASE_PASSWORD = process.env.E2E_SHOWCASE_PASSWORD ?? "";
 // Night Owl Doughnuts takes pickups around the clock, so these tests run at any hour.
 export const SHOP = { slug: "night-owl", name: "Night Owl Doughnuts", staff: "nightowl.staff@example.com", manager: "nightowl.manager@example.com" };
 
+/** The home page's Ask LastCall section: its heading is the question until the first message, then "Ask LastCall". */
+export const HOME_ASK = /Who are you feeding|Ask LastCall/;
+
 export function requireShowcase(): void {
   test.skip(!SHOWCASE_PASSWORD, "Set E2E_SHOWCASE_PASSWORD to the SHOWCASE_PASSWORD the showcase shops were seeded with");
 }
