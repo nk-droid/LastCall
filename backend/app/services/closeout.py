@@ -146,6 +146,8 @@ def generate(merchant_id: str, *, actor: str) -> dict[str, Any]:
     end = close_at(merchant)
     if end is None:
         raise Unprocessable("There's no pickup today, so there's nothing to close out", code="no_pickup_today")
+    if end <= clock.now():
+        raise Unprocessable("Today's pickup has ended, so there's nothing left to close out", code="pickup_ended")
     snap = _snapshot(merchant)
     state: dict[str, Any] = {"merchant": merchant, "snapshot": snap}
     result = run_agent(

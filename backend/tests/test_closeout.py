@@ -193,6 +193,13 @@ def test_run_now_replaces_an_undecided_plan(manager):
     assert ok(manager.get("/api/merchant/closeout"))["plan"]["id"] == second["id"]
 
 
+def test_no_plan_is_made_after_pickup_ends(manager):
+    at(19, 5)  # pickup ended at 7:00 PM
+    res = manager.post("/api/merchant/closeout/run")
+    assert res.status_code == 422 and res.json()["error"]["code"] == "pickup_ended"
+    assert ok(manager.get("/api/merchant/closeout"))["plan"] is None
+
+
 def test_plans_expire_when_pickup_ends(manager):
     at(18, 5)
     closeout.run_due()
