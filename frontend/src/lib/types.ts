@@ -566,6 +566,8 @@ export type ConciergeCard = {
   fits: FitEvidence[];
   pickup_label: string | null;
   default_slot_id: string | null;
+  /** Each part of the request beside what this bundle does about it. */
+  checks?: { key: string; asked: string; answer: string; ok: boolean; strict?: boolean }[];
 };
 
 export type ConciergeMessage = {
@@ -581,6 +583,8 @@ export type ConciergeMessage = {
 /** What a reply was based on: the request as understood, and every shop checked this turn. */
 export type ConciergeDetails = {
   understood: { key: string; label: string; strict: boolean; editable: boolean }[];
+  /** The request as one sentence; parts with a key are the ones the shopper can tap. */
+  ask?: { text: string; key?: string }[];
   shops: {
     slug: string; name: string; options: number; currency: string; from_minor: number | null; reason: string | null;
     left_out: string[]; left_out_count: number; top: boolean; shown: boolean; shown_total_minor: number | null; shown_units: number | null;
