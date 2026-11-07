@@ -45,8 +45,7 @@ import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 
 import { useAccount } from "@/components/account";
-import { ConciergePanel } from "@/components/concierge/concierge";
-import { Dialog } from "@/components/dialog";
+import { AskShopButton } from "@/components/concierge/ask-launcher";
 import { PageShell } from "@/components/site";
 import { EmptyState, ErrorState, FilterChip, InfoList, InfoTip, QuantityStepper, SectionCard, SlowNotice, StatusChip, brand, surface } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
@@ -78,7 +77,6 @@ export function Storefront({ slug }: { slug: string }) {
   // An unfinished pickup at this shop (signed-in customer, or this browser's guest session).
   const mine = useResource((signal) => api<MyOrdersResponse>("/api/me/orders", { signal }), [version]);
   const [text, setText] = useState("");
-  const [asking, setAsking] = useState(false);
   const [people, setPeople] = useState(4);
   const [useBudget, setUseBudget] = useState(false);
   const [budget, setBudget] = useState(18);
@@ -126,12 +124,6 @@ export function Storefront({ slug }: { slug: string }) {
 
   return (
     <PageShell shop={m ? { slug, name: m.name } : undefined}>
-      {m && asking ? (
-        <Dialog open onClose={() => setAsking(false)} side title={`Ask LastCall · ${m.name}`}
-          description="Say who it's for, your budget, allergies and pickup time. You'll get bundles that fit, ready to hold.">
-          <ConciergePanel shop={{ slug, name: m.name }} autoFocus />
-        </Dialog>
-      ) : null}
       {returning ? (
         <Alert severity="success" role="status" icon={<ConfirmationNumberRounded />} sx={{ mb: 3 }}>
           <AlertTitle>Your order {returning.number}</AlertTitle>
@@ -220,9 +212,7 @@ export function Storefront({ slug }: { slug: string }) {
                 </Stack>
 
                 {m ? (
-                  <Button variant="text" startIcon={<AutoAwesomeRounded />} onClick={() => setAsking(true)} sx={{ mt: 1.5, ml: -1 }}>
-                    Or let LastCall pick for you
-                  </Button>
+                  <AskShopButton sx={{ mt: 1.5, ml: -1 }}>Or let LastCall pick for you</AskShopButton>
                 ) : null}
 
                 <Divider sx={{ my: 3.5 }} />
