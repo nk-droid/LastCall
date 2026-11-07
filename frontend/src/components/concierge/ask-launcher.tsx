@@ -5,7 +5,7 @@
 // Hidden where it would get in the way: the home page (which leads with Ask LastCall), checkout and sign-in.
 
 import { AutoAwesomeRounded } from "@mui/icons-material";
-import { Button, Link } from "@mui/material";
+import { Box, Button, Link } from "@mui/material";
 import { usePathname } from "next/navigation";
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 
@@ -35,6 +35,8 @@ export function AskProvider({ shop, children }: { shop?: Scope; children: ReactN
   return (
     <AskContext.Provider value={value}>
       {children}
+      {/* Room under the footer so the floating button never covers the end of the page on a phone. */}
+      {floating ? <Box aria-hidden sx={{ height: { xs: 84, sm: 0 } }} /> : null}
       {floating && !open ? (
         <Button onClick={() => value.open(shop ? "shop" : "all")} aria-haspopup="dialog" startIcon={<AutoAwesomeRounded />}
           sx={{
