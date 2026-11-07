@@ -44,6 +44,8 @@ import { ago, money } from "@/lib/format";
 import type { ShopSettings } from "@/lib/types";
 import { useResource } from "@/lib/use-api";
 
+import { AgentRuns } from "./agent-runs";
+
 type ShopRow = { id: string; slug: string; name: string; category: string; status: string; city: string; is_showcase: boolean; submitted_at: string | null; owners: string[] };
 type Status = {
   shops: Record<string, number>; orders_captured_today_utc: number; payments_unresolved: number; jobs_dead: number; faults_enabled: boolean;
@@ -56,11 +58,6 @@ type Payment = {
 };
 type Webhook = { id: string; event_type: string; resource_id: string | null; verification: string; summary: string; duplicate_count: number; received_at: string; processing_result: string | null };
 type AICall = { id: string; task: string; prompt_version: string; validation_result: string; failure_reason: string | null; latency_ms: number; fallback_used: boolean; created_at: string };
-type AgentStepRow = { idx: number; kind: string; tool: string | null; args: Record<string, unknown>; result: Record<string, unknown>; ok: boolean; latency_ms: number };
-type AgentRunRow = {
-  id: string; kind: string; status: string; model: string; prompt_version: string; steps: number; latency_ms: number; input_tokens: number; output_tokens: number;
-  error: string | null; created_at: string; trace: AgentStepRow[];
-};
 type Job = { id: number; kind: string; state: string; attempts: number; run_at: string; last_error: string | null; created_at: string };
 type Email = { id: string; to: string; template: string; subject: string; status: string; attempts: number; last_error: string | null; created_at: string };
 type AuditRow = { id: number; at: string; actor: string; role: string; entity_type: string; entity_id: string; action: string; trace_id: string | null };
@@ -343,52 +340,6 @@ function WebhooksTab() {
     </SectionCard>
   );
 }
-
-const RUN_TONE: Record<string, Tone> = { done: "success", running: "info", fallback: "neutral", step_limit: "warning", timeout: "warning", error: "danger" };
-
-function AgentRuns() {
-  const runs = useResource((signal) => api<{ runs: AgentRunRow[] }>("/api/ops/agent-runs", { signal }), [], { pollMs: 15_000 });
-  const [open, setOpen] = useState<AgentRunRow | null>(null);
-  return (
-    <SectionCard title="Agent runs" subtitle="Tool-calling runs, step by step. Agents only call tools that wrap existing checks; anything that moves money waits for a person."
-      icon={<RouteRounded />}>
-      {!runs.data ? <LoadingBlock label="Loading agent runs" lines={3} /> : (
-        <DataTable head={["Agent", "Status", "Steps", "Latency", "Tokens in / out", "Model", "When"]} empty={!runs.data.runs.length}>
-          {runs.data.runs.map((r) => (
-            <TableRow key={r.id} hover onClick={() => setOpen(r)} sx={{ cursor: "pointer" }}>
-              <Cell>{r.kind}</Cell>
-              <Cell><StatusChip tone={RUN_TONE[r.status] ?? "neutral"} label={r.status.replace("_", " ")} /></Cell>
-              <Cell>{r.steps}</Cell><Cell>{(r.latency_ms / 1000).toFixed(1)} s</Cell>
-              <Cell mono>{r.input_tokens} / {r.output_tokens}</Cell><Cell mono>{r.model}</Cell><Cell>{ago(r.created_at)}</Cell>
-            </TableRow>
-          ))}
-        </DataTable>
-      )}
-      {open ? (
-        <Dialog open onClose={() => setOpen(null)} side title={`Agent run · ${open.kind}`}
-          description={`${open.status.replace("_", " ")} · ${open.steps} steps · ${(open.latency_ms / 1000).toFixed(1)} s · ${open.model}`}>
-          {open.error ? <Alert severity="warning" sx={{ mb: 2 }}>{open.error}</Alert> : null}
-          <Stack spacing={1.5} component="ol" sx={{ m: 0, p: 0, listStyle: "none" }}>
-            {open.trace.map((st) => (
-              <Box component="li" key={st.idx} sx={{ border: 1, borderColor: "divider", borderRadius: "12px", p: 1.5 }}>
-                <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 0.75 }}>
-                  <Typography variant="caption" color="text.secondary" className="tabular">{st.idx}</Typography>
-                  <Typography variant="subtitle2" component="span" sx={{ fontFamily: "ui-monospace, monospace" }}>{st.tool ?? st.kind}</Typography>
-                  <StatusChip tone={st.ok ? (st.kind === "final" ? "success" : "info") : "danger"} label={st.kind} />
-                  <Typography variant="caption" color="text.secondary" sx={{ ml: "auto" }}>{st.latency_ms} ms</Typography>
-                </Stack>
-                {Object.keys(st.args).length ? <Box component="pre" sx={preSx}>{JSON.stringify(st.args, null, 2)}</Box> : null}
-                {Object.keys(st.result).length ? <Box component="pre" sx={{ ...preSx, color: st.ok ? "text.secondary" : "error.main" }}>{JSON.stringify(st.result, null, 2)}</Box> : null}
-              </Box>
-            ))}
-          </Stack>
-        </Dialog>
-      ) : null}
-    </SectionCard>
-  );
-}
-
-const preSx = { m: 0, mt: 0.5, p: 1, borderRadius: "8px", bgcolor: "action.hover", fontSize: 11.5, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 220, overflow: "auto" } as const;
 
 function AITab() {
   const calls = useResource((signal) => api<{ invocations: AICall[] }>("/api/ops/ai-invocations", { signal }), [], { pollMs: 15_000 });
