@@ -7,6 +7,7 @@ schedule (once a day at the lead time, a 24-hour shop closes at end of day, plan
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -74,8 +75,12 @@ def test_the_plan_starts_once_at_the_lead_time_and_stays_within_the_price_floor(
 
     current = ok(manager.get("/api/merchant/closeout"))
     plan = current["plan"]
-    assert current["schedule"] == {"enabled": True, "lead_minutes": 60, "runs_at": current["schedule"]["runs_at"],
-                                   "runs_at_label": "6:00 PM", "closes_at_label": "7:00 PM"}
+    sched = current["schedule"]
+    assert sched == {"enabled": True, "lead_minutes": 60, "runs_at": sched["runs_at"], "opens_at": sched["opens_at"], "closes_at": sched["closes_at"],
+                     "runs_at_label": "6:00 PM", "closes_at_label": "7:00 PM"}
+    # Today's pickup window drives the countdown on Today.
+    assert sched["opens_at"] < sched["runs_at"] < sched["closes_at"]
+    assert datetime.fromisoformat(sched["closes_at"]) - datetime.fromisoformat(sched["runs_at"]) == timedelta(minutes=60)
     assert plan["status"] == "pending" and plan["source"] == "rules" and plan["expires_label"] == "7:00 PM"
     cuts = [a for a in plan["actions"] if a["status"] == "proposed"]
     assert cuts and all(a["type"] == "lower_price" for a in cuts)
@@ -145,6 +150,8 @@ def test_applying_a_price_cut_is_exactly_the_manual_change(client, manager, fixt
     applied = ok(manager.post(f"/api/merchant/closeout/{plan['id']}/apply", json={}))
 
     assert applied["status"] == "applied" and {a["status"] for a in applied["actions"]} == {"applied"}
+    # The old price is kept on each cut so Today can show the before → after and the size of the cut.
+    assert [(a["old_sale_minor"], a["new_sale_minor"]) for a in plan["actions"]] == [(200, 175), (275, 225)]
     assert any(p["kind"] == "price_changed" for p in ok(client.get(f"/api/quotes/{open_quote['id']}"))["validity"]["problems"])
     assert ok(client.get(f"/api/quotes/{held_quote['id']}"))["validity"]["valid"] is True
     with transaction() as db:

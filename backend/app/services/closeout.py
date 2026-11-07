@@ -87,9 +87,15 @@ def close_at(merchant: Merchant, now: datetime | None = None) -> datetime | None
 
 
 def schedule(merchant: Merchant) -> dict[str, Any]:
-    end = close_at(merchant)
+    day = clock.local_date(merchant.timezone)
+    window = pickup.window_for(merchant, day)
+    start = clock.combine_local(day, window[0], merchant.timezone) if window else None
+    end = clock.combine_local(day, window[1], merchant.timezone) if window else None
     lead = int(policy(merchant, "closeout_lead_minutes", 60))
     return {
+        # Today's pickup window, for the countdown on Today.
+        "opens_at": clock.iso(start) if start else None,
+        "closes_at": clock.iso(end) if end else None,
         "enabled": bool(policy(merchant, "closeout_enabled", True)),
         "lead_minutes": lead,
         "runs_at": clock.iso(end - timedelta(minutes=lead)) if end else None,
@@ -344,7 +350,7 @@ def _check_product(action: PlanAction, p: dict[str, Any], item: dict[str, Any], 
             raise _Drop("The close-out plan only lowers prices")
         if new < (p["floor_minor"] or 0):
             raise _Drop(f"Below the lowest allowed price ({format_money(p['floor_minor'], cur)}, {FLOOR_PERCENT}% of the regular price)")
-        item.update({"new_sale_minor": new, "title": f"Lower {p['name']} to {format_money(new, cur)}",
+        item.update({"new_sale_minor": new, "old_sale_minor": p["sale_minor"], "title": f"Lower {p['name']} to {format_money(new, cur)}",
                      "before": format_money(p["sale_minor"], cur), "after": format_money(new, cur)})
     elif action.type == "pause_listing":
         if p["status"] != "active":

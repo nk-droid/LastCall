@@ -610,6 +610,12 @@ export type CloseoutAction = {
   before?: string;
   after?: string;
   note?: string;
+  name?: string;
+  slot_id?: string;
+  slot_label?: string;
+  booked?: number;
+  old_sale_minor?: number;
+  new_sale_minor?: number;
 };
 
 export type CloseoutPlan = {
@@ -628,6 +634,9 @@ export type CloseoutPlan = {
 
 export type CloseoutState = {
   plan: CloseoutPlan | null;
-  schedule: { enabled: boolean; lead_minutes: number; runs_at: string | null; runs_at_label: string | null; closes_at_label: string | null };
+  schedule: {
+    enabled: boolean; lead_minutes: number; runs_at: string | null; runs_at_label: string | null;
+    opens_at: string | null; closes_at: string | null; closes_at_label: string | null;
+  };
   can_apply: boolean;
 };

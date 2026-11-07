@@ -134,7 +134,7 @@ export function Today() {
             <Box sx={{ display: { xs: "block", lg: "none" } }}>
               <NeedsAttention overview={o} onResolved={overview.reload} />
             </Box>
-            <CloseoutCard />
+            <CloseoutCard slots={o.slots} />
             <OrdersCard overview={o} />
             <SlotsCard slots={o.slots} />
             <QuickStock rows={o.top_surplus} onChanged={overview.reload} />
