@@ -19,7 +19,7 @@ import type { ConciergeCard, ConciergeDetails } from "@/lib/types";
 
 import { AskSentence } from "./ask-sentence";
 import { AssistantText, Composer, EXAMPLES, Progress, UserBubble } from "./concierge";
-import { FitCard, bundleTitle } from "./fit-card";
+import { FitCard, bundleSummary, bundleTitle } from "./fit-card";
 import { useConversation } from "./use-conversation";
 
 export function ConciergeHome({ shopsOpen }: { shopsOpen?: number }) {
@@ -155,7 +155,9 @@ function AlsoFits({ cards, current, onView }: { cards: ConciergeCard[]; current:
             <ProductImage image={c.lines[0]?.image ?? { url: null, alt: c.lines[0]?.name ?? c.label }} size="sm" sx={{ width: 48, height: 48 }} />
             <Box sx={{ flex: "1 1 220px", minWidth: 0 }}>
               <Typography variant="body2" sx={{ fontWeight: 650, color: brand.muted }}>{c.shop.name}</Typography>
-              <Typography variant="body2" sx={{ fontWeight: 650, color: brand.forest }}>{bundleTitle(c)}</Typography>
+              <Typography variant="body2" sx={{ color: brand.forest }}>
+                <Box component="strong" sx={{ fontWeight: 700 }}>{plural(c.units, "item")}</Box>{" · "}{bundleSummary(c)}
+              </Typography>
             </Box>
             <Typography className="tabular" sx={{ fontWeight: 800 }}>{money(c.total_minor, c.currency)}</Typography>
             <Button variant="outlined" color="inherit" size="small" onClick={() => onView(i)} aria-label={`View ${c.shop.name}: ${bundleTitle(c)}`}>View</Button>

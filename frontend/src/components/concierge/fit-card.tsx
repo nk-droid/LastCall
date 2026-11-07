@@ -10,12 +10,47 @@ import { Box, Button, Chip, Link, Stack, Typography } from "@mui/material";
 import { PriceTag } from "@/components/commerce";
 import { ProductImage } from "@/components/product-image";
 import { brand, tones } from "@/components/ui";
+import { plural } from "@/lib/format";
 import type { ConciergeCard } from "@/lib/types";
 
 import { useHold } from "./bundle-card";
 
 export function bundleTitle(card: ConciergeCard): string {
   return card.lines.map((line) => `${line.qty} × ${line.name}`).join(" · ");
+}
+
+/** Biggest quantity first, so the bulk of the bundle reads first. */
+function byQty(card: ConciergeCard) {
+  return [...card.lines].sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name));
+}
+
+/** "6 × Red bean bun, 1 × BBQ pork bun and 2 more": for one-line rows. */
+export function bundleSummary(card: ConciergeCard): string {
+  const lines = byQty(card);
+  const head = lines.slice(0, 2).map((line) => `${line.qty} × ${line.name}`).join(", ");
+  return lines.length > 2 ? `${head} and ${lines.length - 2} more` : head;
+}
+
+/** What's in the bundle, one item per row: quantity, then the name. */
+function ItemList({ card }: { card: ConciergeCard }) {
+  return (
+    <Box component="ul" aria-label="What's in it" sx={{ listStyle: "none", m: 0, p: 0, display: "grid", gap: 1 }}>
+      {byQty(card).map((line) => (
+        <Box component="li" key={line.name} sx={{ display: "flex", alignItems: "center", gap: 1.25, minWidth: 0 }}>
+          <Box component="span" aria-hidden className="tabular" sx={{
+            minWidth: 38, height: 28, px: 0.75, borderRadius: "8px", bgcolor: brand.mint, color: brand.leafDark,
+            fontWeight: 800, fontSize: 14, display: "inline-grid", placeItems: "center", flexShrink: 0,
+          }}>
+            {line.qty}×
+          </Box>
+          {line.image?.url ? <ProductImage image={line.image} size="sm" sx={{ width: 36, height: 36 }} /> : null}
+          <Typography component="span" sx={{ fontSize: 15, lineHeight: 1.35, color: brand.forest, minWidth: 0 }}>
+            <span className="sr-only">{line.qty} </span>{line.name}
+          </Typography>
+        </Box>
+      ))}
+    </Box>
+  );
 }
 
 export function FitCard({ card, leftOut }: { card: ConciergeCard; leftOut?: { names: string[]; count: number } }) {
@@ -39,8 +74,9 @@ export function FitCard({ card, leftOut }: { card: ConciergeCard; leftOut?: { na
           <Link href={`/shops/${card.shop.slug}`} underline="hover" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontWeight: 650, fontSize: 14, color: brand.muted }}>
             <StorefrontRounded aria-hidden sx={{ fontSize: 16 }} />{card.shop.name}
           </Link>
-          <Typography variant="h3" component="h3" sx={{ mt: 0.5 }}>{title}</Typography>
+          <Typography variant="h3" component="h3" sx={{ mt: 0.5 }}>{plural(card.units, "item")}</Typography>
         </Box>
+        <ItemList card={card} />
         <PriceTag price={card.total_minor} reference={card.reference_minor} currency={card.currency} />
         <Box sx={{ mt: first?.image?.url ? "auto" : 0.5 }}>
           {error ? <Typography variant="body2" color="error" role="alert" sx={{ mb: 1 }}>{error}</Typography> : null}
