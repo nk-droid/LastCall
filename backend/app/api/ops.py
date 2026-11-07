@@ -3,6 +3,8 @@ background jobs, traces, the audit log and (when enabled) PayPal failure injecti
 
 from __future__ import annotations
 
+import statistics
+from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -147,17 +149,19 @@ def ai_invocations(admin: SessionUser = Depends(platform_admin)) -> dict[str, An
 
 @router.get("/agent-runs")
 def agent_runs(kind: str | None = None, admin: SessionUser = Depends(platform_admin)) -> dict[str, Any]:
-    """Recent agent runs with their step traces, newest first."""
+    """Recent agent runs with their step traces and model turns, newest first, plus the last 24 hours at a glance."""
     with transaction() as db:
         query = select(AgentRun).order_by(AgentRun.created_at.desc()).limit(40)
         if kind:
             query = query.where(AgentRun.kind == kind)
         runs = db.scalars(query).all()
-        steps = db.scalars(select(AgentStep).where(AgentStep.run_id.in_([r.id for r in runs])).order_by(AgentStep.idx)).all() if runs else []
+        ids = [r.id for r in runs]
+        steps = db.scalars(select(AgentStep).where(AgentStep.run_id.in_(ids)).order_by(AgentStep.idx)).all() if runs else []
+        turns = _turns(db, ids)
         by_run: dict[str, list[AgentStep]] = {}
         for st in steps:
             by_run.setdefault(st.run_id, []).append(st)
-        return {"runs": [run_view(r, by_run.get(r.id, [])) for r in runs]}
+        return {"runs": [run_view(r, by_run.get(r.id, []), turns.get(r.id, [])) for r in runs], "stats": _run_stats(db, kind)}
 
 
 @router.get("/agent-runs/{run_id}")
@@ -167,7 +171,39 @@ def agent_run(run_id: str, admin: SessionUser = Depends(platform_admin)) -> dict
         if run is None:
             raise NotFound("Agent run not found")
         steps = db.scalars(select(AgentStep).where(AgentStep.run_id == run_id).order_by(AgentStep.idx)).all()
-        return run_view(run, list(steps))
+        return run_view(run, list(steps), _turns(db, [run_id]).get(run_id, []))
+
+
+def _turns(db, run_ids: list[str]) -> dict[str, list[AIInvocation]]:
+    """Each run's model turns in the order they happened."""
+    if not run_ids:
+        return {}
+    rows = db.scalars(select(AIInvocation).where(AIInvocation.agent_run_id.in_(run_ids))
+                      .order_by(AIInvocation.offset_ms.asc().nulls_last(), AIInvocation.created_at, AIInvocation.id)).all()
+    out: dict[str, list[AIInvocation]] = {}
+    for row in rows:
+        out.setdefault(row.agent_run_id, []).append(row)
+    return out
+
+
+FAILED_RUNS = ("error", "timeout", "step_limit")
+
+
+def _run_stats(db, kind: str | None) -> dict[str, Any]:
+    since = clock.now() - timedelta(hours=24)
+    query = select(AgentRun.status, AgentRun.latency_ms, AgentRun.input_tokens, AgentRun.output_tokens).where(
+        AgentRun.created_at >= since, AgentRun.status != "running")
+    if kind:
+        query = query.where(AgentRun.kind == kind)
+    rows = db.execute(query).all()
+    times = sorted(r.latency_ms for r in rows if r.status not in ("fallback",))
+    return {
+        "runs": len(rows),
+        "median_ms": statistics.median(times) if times else None,
+        "failed": sum(1 for r in rows if r.status in FAILED_RUNS),
+        "input_tokens": sum(r.input_tokens or 0 for r in rows),
+        "output_tokens": sum(r.output_tokens or 0 for r in rows),
+    }
 
 
 @router.get("/jobs")

@@ -29,4 +29,6 @@ class AIInvocation(Base):
     fallback_used: Mapped[bool] = mapped_column(Boolean, default=False)
     # Set when the call was one turn of an agent run (see app.models.agents).
     agent_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    # For an agent turn: when it started, in ms from the start of the run.
+    offset_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = created_col()

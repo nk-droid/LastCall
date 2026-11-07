@@ -50,6 +50,8 @@ class AgentStep(Base):
     result: Mapped[dict[str, Any]] = mapped_column(default=dict)
     ok: Mapped[bool] = mapped_column(Boolean, default=True)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    # When the step started, in ms from the start of its run (None for runs recorded before timing was kept).
+    offset_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = created_col()
 
 
