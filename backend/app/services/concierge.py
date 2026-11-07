@@ -134,7 +134,7 @@ def run_turn(conversation_id: str) -> None:
             today = clock.local_date(zone).strftime("%A, %B %-d")
             now_label = clock.display_time(clock.now(), zone)
         state: dict[str, Any] = {
-            "conversation_id": conversation_id, "scope": scope_ref, "options": {}, "checked": [], "shops": {}, "merchant_ids": {}, "requests": {},
+            "conversation_id": conversation_id, "scope": scope_ref, "options": {}, "checked": [], "shops": {}, "merchant_ids": {}, "requests": {}, "board": {}, "understood": {}, "listed": None,
             "shopper_text": " ".join(m["text"] for m in messages if m["role"] == "user")[-600:],
         }
         result = run_agent(
@@ -175,6 +175,7 @@ def _list_shops(ctx, args: ListShopsArgs) -> dict[str, Any]:
     with transaction() as db:
         cards = [merchant_card(db, m, now) for m in _listed(db, ctx.state["scope"])]
     shops = []
+    ctx.state["listed"] = len(cards)
     for c in cards:
         ctx.state["shops"][c["slug"]] = c["name"]
         shops.append({
@@ -241,6 +242,15 @@ def _search(state: dict[str, Any], session_id: str, slug: str, args: FindBundles
     request = _request(intent, merchant)
     state["merchant_ids"][slug] = merchant.id
     state["requests"][slug] = request
+    # For the reply's "how we picked this": what was applied, what this shop offered, and why it was passed on.
+    state["understood"][slug] = _understood(parsed.fields, request)
+    risky = [e["name"] for e in proposal.get("excluded", []) if any(_RISKY.search(r) for r in e.get("reasons", []))]
+    state["board"][slug] = {
+        "slug": slug, "name": merchant.name, "options": len(options), "currency": merchant.currency,
+        "from_minor": min((state["options"][o["option_id"]]["total_minor"] for o in options), default=None),
+        "reason": result["no_match"]["headline"] if "no_match" in result else (None if options else "No bundle fits right now."),
+        "left_out": risky[:8], "left_out_count": len(risky),
+    }
     props: dict[str, Any] = {"conversation_id": state["conversation_id"], "options": len(options), "request": request}
     if not options:
         props["gap"] = (proposal.get("no_match") or {}).get("code", "other")
@@ -263,6 +273,42 @@ def _request(intent: dict[str, Any], merchant: Merchant) -> dict[str, Any]:
         "exclusions": sorted({e["code"] for e in intent.get("exclusions", [])}), "dietary": list(intent.get("dietary", [])),
         "preferences": list(intent.get("preferences", []))[:3], "occasion": intent.get("occasion"), "pickup_window": window,
     }
+
+
+_RISKY = re.compile(r"^(Contains|May contain|Allergen information not merchant-verified|Not merchant-verified)")
+EDITABLE = {"party_size", "budget", "pickup"}
+
+
+def _understood(fields: list[dict[str, Any]], request: dict[str, Any]) -> list[dict[str, Any]]:
+    """The parsed request as chips: allergens and diets are strict (always applied); size, budget and time can be changed."""
+    out = []
+    for f in fields:
+        key = f["key"]
+        if key == "note":
+            continue
+        label = f["label"]
+        if key == "pickup" and not request.get("pickup_window"):
+            label = "Any pickup time"
+        elif key == "budget" and request.get("budget_minor"):
+            label = f"Under {format_money(request['budget_minor'], request.get('currency', 'USD'))}"
+        out.append({"key": key, "label": label, "strict": key.startswith(("exclusion:", "dietary:")), "editable": key in EDITABLE})
+    return out
+
+
+def _details(state: dict[str, Any], cards: list[dict[str, Any]]) -> dict[str, Any] | None:
+    board: dict[str, dict[str, Any]] = state.get("board") or {}
+    if not board:
+        return None
+    top = cards[0]["shop"]["slug"] if cards else None
+    shown = {c["shop"]["slug"] for c in cards}
+    basis = top if top in state["understood"] else next(reversed(state["understood"]), None)
+    first = {}
+    for c in cards:
+        first.setdefault(c["shop"]["slug"], c)
+    shops = [{**entry, "top": entry["slug"] == top, "shown": entry["slug"] in shown,
+              "shown_total_minor": first[entry["slug"]]["total_minor"] if entry["slug"] in first else None,
+              "shown_units": first[entry["slug"]]["units"] if entry["slug"] in first else None} for entry in board.values()]
+    return {"understood": state["understood"].get(basis, []), "shops": shops, "listed": state.get("listed")}
 
 
 def _listed(db, scope: tuple[str, str] | None) -> list[Merchant]:
@@ -390,7 +436,11 @@ def _reply(text: str, cards: list[dict[str, Any]], questions: list[str], state: 
             clean = f"Here {'is an option' if len(cards) == 1 else f'are {len(cards)} options'} from {names} that fit your request."
         elif not questions:
             clean = "I couldn't find a bundle that fits right now. Try a later pickup, a larger budget or fewer people."
-    return _message(clean, source=source, cards=cards, questions=questions)
+    message = _message(clean, source=source, cards=cards, questions=questions)
+    details = _details(state, cards)
+    if details:
+        message["details"] = details
+    return message
 
 
 def _message(text: str, *, source: str, cards: list[dict[str, Any]] | None = None, questions: list[str] | None = None) -> dict[str, Any]:

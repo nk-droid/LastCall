@@ -218,6 +218,30 @@ def test_a_turn_that_died_with_its_process_is_released(client, fixture_llm):
     assert recovered["status"] == "idle" and "took too long" in recovered["messages"][-1]["text"]
 
 
+def test_each_reply_shows_what_was_understood_and_how_each_shop_was_judged(client, fixture_llm, night_owl):
+    # Night Owl can't feed 30 for $10; Juniper can feed 4 within it, leaving out its nut items.
+    fixture_llm.queue(TASK, turn(call("list_shops")),
+                      turn(call("find_bundles", shop="juniper-rye", party_size=4, budget_dollars=10),
+                           call("find_bundles", shop="night-owl", party_size=30, budget_dollars=10)), respond_with(1))
+    reply = send(client, "Snacks for 4 people under $10, my son has a nut allergy")["messages"][-1]
+    details = reply["details"]
+
+    chips = {c["key"]: c for c in details["understood"]}
+    assert chips["party_size"]["label"] == "4 people · snacks" and chips["party_size"]["editable"]
+    assert chips["budget"]["label"] == "Under $10.00"
+    assert chips["exclusion:tree_nuts"]["strict"] and chips["exclusion:peanuts"]["strict"] and not chips["exclusion:peanuts"]["editable"]
+    assert chips["pickup"]["label"] == "Any pickup time"  # no time was asked for
+
+    juniper, owl = details["shops"]
+    assert (juniper["slug"], juniper["top"], juniper["shown"]) == ("juniper-rye", True, True)
+    assert juniper["options"] > 0 and juniper["reason"] is None
+    assert juniper["shown_total_minor"] == reply["cards"][0]["total_minor"] and juniper["shown_units"] == reply["cards"][0]["units"]
+    assert juniper["from_minor"] <= juniper["shown_total_minor"]
+    assert "Banana walnut bread (slice)" in juniper["left_out"] and juniper["left_out_count"] >= len(juniper["left_out"])
+    assert (owl["slug"], owl["options"], owl["top"]) == ("night-owl", 0, False) and owl["reason"]
+    assert details["listed"] == 2
+
+
 def test_the_agent_knows_the_time_and_is_told_not_to_guess_a_pickup_time(client, fixture_llm):
     fixture_llm.queue(TASK, turn(call("respond", message="", questions=["How many people?"])))
     send(client, "Something sweet")
