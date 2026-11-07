@@ -36,7 +36,7 @@ export function WatchThis({ conversationId, hasCards, variant = "inline" }: { co
       <Stack direction="row" spacing={1} sx={{ alignItems: "center", pl }} role="status">
         <NotificationsActiveRounded aria-hidden sx={{ fontSize: 18, color: brand.leaf }} />
         <Typography variant="body2" sx={{ color: brand.forest }}>
-          Watching. We&apos;ll email you once a day at most when a shop lists a bundle like this. <Link href="/account#watches">Manage</Link>
+          Watching. We&apos;ll email you once a day at most when a shop lists a bundle like this. <Link href="/alerts">See alerts</Link>
         </Typography>
       </Stack>
     );

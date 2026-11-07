@@ -44,7 +44,7 @@ export function useAccount(): AccountContextValue {
 }
 
 // Baskets, holds and orders belong to the browser's shopper session, which signing out replaces.
-const PRIVATE_PREFIXES = ["/review/", "/checkout/", "/orders", "/merchant", "/ops", "/account"];
+const PRIVATE_PREFIXES = ["/review/", "/checkout/", "/orders", "/merchant", "/ops", "/account", "/alerts"];
 
 export function AccountProvider({ children }: { children: ReactNode }) {
   const router = useRouter();

@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { brand, surface } from "@/theme/tokens";
 
 import { AccountMenu } from "./account";
+import { AlertsBell } from "./alerts";
 import { AskProvider } from "./concierge/ask-launcher";
 import { useConfig } from "./config";
 import { StatusChip } from "./ui";
@@ -62,6 +63,7 @@ export function SiteHeader({ children, shop }: { children?: ReactNode; shop?: Sh
           <Box sx={{ display: { xs: "none", sm: "block" } }}>
             <EnvironmentBadge />
           </Box>
+          <AlertsBell />
           <Button href="/orders" color="inherit" startIcon={<ReceiptLongRounded />} sx={{ display: { xs: "none", md: "inline-flex" }, color: "text.secondary" }}>
             My orders
           </Button>
