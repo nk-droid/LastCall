@@ -252,3 +252,40 @@ def test_a_concierge_conversation_can_be_watched(shopper, fixture_llm):
     created = watch(shopper, "", shop=None, conversation_id=convo["id"])
     assert created["request"] == "Savory snacks for 3 people under $14"
     assert created["shop"] == {"slug": "juniper-rye", "name": "Juniper & Rye Bakehouse"}
+
+
+def test_matches_land_in_the_shoppers_alerts_inbox(app, shopper):
+    created = watch(shopper, "breakfast for 2 under $10, nut allergy")
+    assert ok(shopper.get("/api/me/alerts")) == {"alerts": [], "unread": 0}
+    run_scans()
+
+    inbox = ok(shopper.get("/api/me/alerts"))
+    [alert] = inbox["alerts"]
+    assert inbox["unread"] == 1 and ok(shopper.get("/api/me/alerts/unread")) == {"unread": 1}
+    assert alert["shop"] == {"slug": "juniper-rye", "name": "Juniper & Rye Bakehouse"} and alert["total_minor"] <= 1000
+    assert {ln["name"] for ln in alert["lines"]} == matched_products(alert["id"]) and all(ln["qty"] >= 1 for ln in alert["lines"])
+    assert alert["watch"] == {"id": created["id"], "request": "breakfast for 2 under $10, nut allergy", "status": "active"}
+    assert (alert["seen"], alert["opened"]) == (False, False) and alert["pickup_label"]
+
+    # Visiting the inbox clears the bell; the alert stays listed.
+    assert ok(shopper.post("/api/me/alerts/seen")) == {"unread": 0}
+    assert ok(shopper.get("/api/me/alerts"))["alerts"][0]["seen"] is True
+
+    # Someone else can't see or dismiss it; "Not this" hides it and the watch keeps going.
+    other = new_client(app)
+    signup(other, "someone@example.com")
+    assert ok(other.get("/api/me/alerts"))["alerts"] == []
+    assert other.post(f"/api/me/alerts/{alert['id']}/dismiss").status_code == 404
+    assert new_client(app).get("/api/me/alerts").status_code == 401
+    ok(shopper.post(f"/api/me/alerts/{alert['id']}/dismiss"))
+    assert ok(shopper.get("/api/me/alerts"))["alerts"] == []
+    assert ok(shopper.get("/api/me/watches"))["watches"][0]["status"] == "active"
+
+
+def test_opening_an_alert_counts_as_read(app, shopper):
+    watch(shopper, "breakfast for 2 under $10")
+    run_scans()
+    [alert] = ok(shopper.get("/api/me/alerts"))["alerts"]
+    ok(shopper.post(f"/api/watches/matches/{alert['id']}/open"))
+    inbox = ok(shopper.get("/api/me/alerts"))
+    assert inbox["unread"] == 0 and inbox["alerts"][0]["opened"] is True
