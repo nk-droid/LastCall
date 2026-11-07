@@ -89,6 +89,7 @@ def _option_view(kind: str, label: str, sb: ScoredBundle, intent: Intent, mercha
             "qty": qty,
             "category": item.category,
             "flavor": item.flavor,
+            "tags": sorted(item.tags or []),
             "unit_sale_minor": item.sale_minor,
             "unit_reference_minor": item.reference_minor,
             "line_total_minor": item.sale_minor * qty,

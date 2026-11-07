@@ -240,6 +240,38 @@ def test_each_reply_shows_what_was_understood_and_how_each_shop_was_judged(clien
     assert "Banana walnut bread (slice)" in juniper["left_out"] and juniper["left_out_count"] >= len(juniper["left_out"])
     assert (owl["slug"], owl["options"], owl["top"]) == ("night-owl", 0, False) and owl["reason"]
     assert details["listed"] == 2
+    assert "".join(p["text"] for p in details["ask"]) == "Snacks for 4 people, under $10, picked up any time today, with no peanuts or tree nuts."
+
+
+def test_the_request_reads_back_as_a_sentence_and_each_bundle_shows_how_it_fits(client, fixture_llm):
+    # Juniper's pickup runs 4–7 PM, so "after 5 PM" reads as just that.
+    fixture_llm.queue(TASK, turn(call("find_bundles", shop="juniper-rye", party_size=4, budget_dollars=20, pickup_after="17:00", preferences=["savory"])),
+                      respond_with(1))
+    reply = send(client, "Savory snacks for 4 under $20 after 5 PM, my son has a nut allergy")["messages"][-1]
+
+    ask = reply["details"]["ask"]
+    assert "".join(p["text"] for p in ask) == "Savory snacks for 4 people, under $20, picked up after 5 PM today, with no peanuts or tree nuts."
+    assert [p["key"] for p in ask if "key" in p] == ["preference:savory", "party_size", "budget", "pickup", "exclusions"]
+
+    card = reply["cards"][0]
+    checks = {c["key"]: c for c in card["checks"]}
+    assert list(checks) == ["party_size", "budget", "pickup", "exclusions", "preference:savory"]
+    assert checks["party_size"]["asked"] == "4 people" and checks["party_size"]["answer"].endswith("per person")
+    spare = 2000 - card["total_minor"]
+    assert checks["budget"]["ok"] and checks["budget"]["answer"] == f"${card['total_minor'] / 100:.2f}, with ${spare / 100:.2f} to spare"
+    assert checks["pickup"] == {"key": "pickup", "asked": "After 5 PM today", "answer": f"Pickup {card['pickup_label']}", "ok": True}
+    assert checks["exclusions"]["strict"] and checks["exclusions"]["ok"] and checks["exclusions"]["asked"] == "No peanuts or tree nuts"
+    assert checks["exclusions"]["answer"] == "Juniper & Rye Bakehouse lists every item free of peanuts and tree nuts, with no cross-contact"
+    taste = checks["preference:savory"]
+    assert taste["asked"] == "Savory" and ("closest fit" in taste["answer"]) is not taste["ok"]
+
+
+def test_a_time_that_matches_a_shops_whole_window_still_reads_as_asked(client, fixture_llm):
+    # Juniper's pickup starts at 4 PM: "after 4 PM" is its whole window (the shop's page shows no time), yet the
+    # sentence keeps what the shopper said.
+    fixture_llm.queue(TASK, turn(call("find_bundles", shop="juniper-rye", party_size=4, pickup_after="16:00")), respond_with(1))
+    reply = send(client, "Something for 4 after 4 PM")["messages"][-1]
+    assert "picked up after 4 PM today" in "".join(p["text"] for p in reply["details"]["ask"])
 
 
 def test_the_agent_knows_the_time_and_is_told_not_to_guess_a_pickup_time(client, fixture_llm):

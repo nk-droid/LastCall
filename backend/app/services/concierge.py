@@ -25,7 +25,7 @@ from app.ai.agent import AgentResult, Tool, ToolError, run_agent
 from app.ai.sanitize import clean_customer_prose, looks_like_injection
 from app.api.public import merchant_card
 from app.db import transaction
-from app.domain import AllergenCode, DietCode, Exclusion, Occasion, Preference, mentions_free_from_claim
+from app.domain import ALLERGEN_LABELS, AllergenCode, DietCode, Exclusion, Occasion, Preference, mentions_free_from_claim
 from app.errors import AppError, Conflict, NotFound
 from app.ids import new_id
 from app.models import Conversation, Merchant
@@ -134,7 +134,7 @@ def run_turn(conversation_id: str) -> None:
             today = clock.local_date(zone).strftime("%A, %B %-d")
             now_label = clock.display_time(clock.now(), zone)
         state: dict[str, Any] = {
-            "conversation_id": conversation_id, "scope": scope_ref, "options": {}, "checked": [], "shops": {}, "merchant_ids": {}, "requests": {}, "board": {}, "understood": {}, "listed": None,
+            "conversation_id": conversation_id, "scope": scope_ref, "options": {}, "checked": [], "shops": {}, "merchant_ids": {}, "requests": {}, "board": {}, "understood": {}, "ask": {}, "listed": None,
             "shopper_text": " ".join(m["text"] for m in messages if m["role"] == "user")[-600:],
         }
         result = run_agent(
@@ -219,16 +219,18 @@ def _search(state: dict[str, Any], session_id: str, slug: str, args: FindBundles
         proposal = recommendation.propose(intent_id or "", session_id, ai_rationale=False)
     except AppError as exc:
         raise ToolError(exc.message) from None
+    intent = proposal["intent"]
+    request = _request(intent, merchant)
     options = []
     for opt in proposal["options"]:
         card = _card(proposal, opt, merchant)
+        card["checks"] = _checks(intent, request, opt, card, merchant)
         state["options"][card["option_id"]] = card
         options.append({
             "option_id": card["option_id"], "label": opt["label"], "items": ", ".join(f"{ln['qty']} × {ln['name']}" for ln in opt["lines"]),
             "total": format_money(card["total_minor"], card["currency"]), "servings": round(float(opt["servings"]), 1),
             "pickup": card["pickup_label"], "why": opt["why"],
         })
-    intent = proposal["intent"]
     applied = {
         "party_size": intent.get("party_size"),
         "budget": format_money(intent["budget_minor"], merchant.currency) if intent.get("budget_minor") else None,
@@ -239,11 +241,11 @@ def _search(state: dict[str, Any], session_id: str, slug: str, args: FindBundles
     if not options and proposal.get("no_match"):
         result["no_match"] = {"headline": proposal["no_match"].get("headline"), "suggestions": proposal["no_match"].get("suggestions", [])[:3]}
     # What the shop sees on its Assistant page: the request as structured facts (never the shopper's words).
-    request = _request(intent, merchant)
     state["merchant_ids"][slug] = merchant.id
     state["requests"][slug] = request
     # For the reply's "how we picked this": what was applied, what this shop offered, and why it was passed on.
     state["understood"][slug] = _understood(parsed.fields, request)
+    state.setdefault("ask", {})[slug] = _ask(intent, request, merchant)
     risky = [e["name"] for e in proposal.get("excluded", []) if any(_RISKY.search(r) for r in e.get("reasons", []))]
     state["board"][slug] = {
         "slug": slug, "name": merchant.name, "options": len(options), "currency": merchant.currency,
@@ -295,6 +297,150 @@ def _understood(fields: list[dict[str, Any]], request: dict[str, Any]) -> list[d
     return out
 
 
+# The request read back as one sentence ("Savory food for 6 people, under $25, picked up after 5 PM today, with no
+# peanuts or tree nuts."), and how each bundle meets every part of it. Parts with a key are the ones the page lets the
+# shopper tap: size, budget, time and taste can be changed; allergies and diets are strict and only shown.
+_NOUNS = {"brunch": "brunch", "breakfast": "breakfast", "snacks": "snacks", "dessert": "dessert", "party": "party food",
+          "office": "office treats", "picnic": "picnic food", "dinner": "dinner"}
+_PREF_WORDS = {"sweet": "sweet", "savory": "savory", "sweet_and_savory": "sweet & savory", "variety": "mixed", "chocolate": "chocolate",
+               "fruit": "fruity", "kid_friendly": "kid-friendly", "handheld": "handheld", "shareable": "shareable"}
+_PREF_NOUNS = {"bread": "bread", "pastries": "pastries"}
+_PREF_TAGS = {"chocolate", "fruit", "kid_friendly", "handheld", "shareable"}
+
+
+def _join(items: list[str], word: str = "and") -> str:
+    return f"{', '.join(items[:-1])} {word} {items[-1]}" if len(items) > 1 else (items[0] if items else "")
+
+
+def _short_time(hhmm: str) -> str:
+    h, m = (int(x) for x in hhmm.split(":"))
+    return f"{(h % 12) or 12}{f':{m:02d}' if m else ''} {'AM' if h < 12 else 'PM'}"
+
+
+def _short_money(minor: int, currency: str) -> str:
+    text = format_money(minor, currency)
+    return text[:-3] if text.endswith(".00") else text
+
+
+def _people(n: int) -> str:
+    return f"{n} {'person' if n == 1 else 'people'}"
+
+
+def _when(intent: dict[str, Any], merchant: Merchant) -> str:
+    """"after 5 PM today", "by 7 PM tomorrow", "between 5 and 7 PM today" or "any time today".
+
+    Read from the window as asked, not the shop-facing request: "after 5 PM" at a shop that opens at 5 is the shop's
+    whole window, but it's still what the shopper said. Only a whole day at a 24-hour shop reads as "any time"."""
+    today = clock.local_date(merchant.timezone)
+    day = date.fromisoformat(intent["pickup_date"]) if intent.get("pickup_date") else today
+    word = "today" if day == today else "tomorrow" if day == today + timedelta(days=1) else day.strftime("%a %b %-d")
+    window = intent.get("pickup_window")
+    shop = pickup.window_for(merchant, day)
+    if not window or (tuple(window) == shop and shop == ("00:00", "23:59")):
+        return f"any time {word}"
+    start, end = window
+    if shop and end >= shop[1]:
+        return f"after {_short_time(start)} {word}"
+    if shop and start <= shop[0]:
+        return f"by {_short_time(end)} {word}"
+    return f"between {_short_time(start)} and {_short_time(end)} {word}"
+
+
+def _ask(intent: dict[str, Any], request: dict[str, Any], merchant: Merchant) -> list[dict[str, str]]:
+    words = [{"key": f"dietary:{d}", "text": d} for d in request["dietary"]]
+    noun = {"text": _NOUNS.get(request.get("occasion") or "", "food")}
+    for pref in intent.get("preferences", []):
+        if pref in _PREF_NOUNS and "key" not in noun:
+            noun = {"key": f"preference:{pref}", "text": _PREF_NOUNS[pref]}
+        elif pref in _PREF_WORDS:
+            words.append({"key": f"preference:{pref}", "text": _PREF_WORDS[pref]})
+    parts: list[dict[str, str]] = []
+    for word in [*words, noun]:
+        if parts:
+            parts.append({"text": " "})
+        parts.append(dict(word))
+    parts[0]["text"] = parts[0]["text"][:1].upper() + parts[0]["text"][1:]
+    if request.get("party_size"):
+        parts += [{"text": " for "}, {"key": "party_size", "text": _people(request["party_size"])}]
+    if request.get("budget_minor"):
+        parts += [{"text": ", under "}, {"key": "budget", "text": _short_money(request["budget_minor"], request["currency"])}]
+    parts += [{"text": ", picked up "}, {"key": "pickup", "text": _when(intent, merchant)}]
+    if request["exclusions"]:
+        parts += [{"text": ", with "}, {"key": "exclusions", "text": "no " + _join([ALLERGEN_LABELS[c] for c in request["exclusions"]], "or")}]
+    parts.append({"text": "."})
+    merged: list[dict[str, str]] = []
+    for part in parts:  # neighbouring plain text reads as one run
+        if merged and "key" not in part and "key" not in merged[-1]:
+            merged[-1] = {"text": merged[-1]["text"] + part["text"]}
+        else:
+            merged.append(part)
+    return merged
+
+
+def _names(lines: list[dict[str, Any]]) -> str:
+    names = [ln["name"] for ln in lines]
+    return _join(names) if len(names) <= 2 else f"{names[0]}, {names[1]} and {len(names) - 2} more"
+
+
+def _taste(pref: str, lines: list[dict[str, Any]], units: int) -> tuple[bool, str]:
+    """Whether a bundle has what a taste preference asked for, from each item's own flavor, category and tags."""
+    if pref == "variety":
+        return len(lines) > 1, f"{len(lines)} different items"
+    sweet = sum(ln["qty"] for ln in lines if ln.get("flavor") == "sweet")
+    if pref == "sweet_and_savory":
+        if sweet and units - sweet:
+            return True, f"{sweet} sweet and {units - sweet} savory"
+        return False, f"All {'sweet' if sweet else 'savory'}, the closest fit"
+    def has(ln: dict[str, Any]) -> bool:
+        if pref == "sweet":
+            return ln.get("flavor") == "sweet"
+        if pref == "savory":
+            return ln.get("flavor") != "sweet"
+        if pref == "bread":
+            return ln.get("category") == "bread"
+        if pref == "pastries":
+            return ln.get("category") == "pastry"
+        return pref in _PREF_TAGS and pref in (ln.get("tags") or [])
+    hits = [ln for ln in lines if has(ln)]
+    count = sum(ln["qty"] for ln in hits)
+    if not hits:
+        return False, f"Nothing {_PREF_WORDS.get(pref) or _PREF_NOUNS.get(pref, pref)} left, so this is the closest fit"
+    return True, _names(hits) if count == units else f"{count} of {units}: {_names(hits)}"
+
+
+def _checks(intent: dict[str, Any], request: dict[str, Any], opt: dict[str, Any], card: dict[str, Any], merchant: Merchant) -> list[dict[str, Any]]:
+    """Each part of the request beside what this bundle does about it. Every answer comes from the engine's own numbers."""
+    cur = card["currency"]
+    rows: list[dict[str, Any]] = []
+    party = request.get("party_size")
+    if party:
+        each = round(float(opt["servings"]) / party, 1)
+        share = "one" if each == 1 else f"about {each:g}"
+        units = opt["units"]
+        rows.append({"key": "party_size", "asked": _people(party), "answer": f"{units} item{'' if units == 1 else 's'}, {share} per person", "ok": True})
+    if request.get("budget_minor"):
+        left = request["budget_minor"] - card["total_minor"]
+        total = format_money(card["total_minor"], cur)
+        rows.append({"key": "budget", "asked": f"Under {_short_money(request['budget_minor'], cur)}", "ok": left >= 0,
+                     "answer": f"{total}, with {format_money(left, cur)} to spare" if left > 0 else f"{total}, right at your budget"})
+    when = _when(intent, merchant)
+    rows.append({"key": "pickup", "asked": when[:1].upper() + when[1:], "ok": bool(card["pickup_label"]),
+                 "answer": f"Pickup {card['pickup_label']}" if card["pickup_label"] else "No pickup time left"})
+    allergens = [ALLERGEN_LABELS[c] for c in request["exclusions"]]
+    diets = list(request["dietary"])
+    if allergens or diets:
+        strict = any(e.get("severity") in ("strict", "needs_confirmation") for e in intent.get("exclusions", []))
+        asked = [*(d.capitalize() for d in diets), *([("no " if diets else "No ") + _join(allergens, "or")] if allergens else [])]
+        claims = [*([f"free of {_join(allergens)}"] if allergens else []), *([f"as {_join(diets)}"] if diets else [])]
+        rows.append({"key": "exclusions", "asked": ", ".join(asked), "strict": True,
+                     "ok": any(f["key"] == "exclusions" for f in opt["fits"]),
+                     "answer": f"{merchant.name} lists every item {' and '.join(claims)}{', with no cross-contact' if strict and allergens else ''}"})
+    for pref in intent.get("preferences", []):
+        ok, answer = _taste(pref, opt["lines"], opt["units"])
+        rows.append({"key": f"preference:{pref}", "asked": intent_service.PREF_LABELS.get(pref, pref), "answer": answer, "ok": ok})
+    return rows
+
+
 def _details(state: dict[str, Any], cards: list[dict[str, Any]]) -> dict[str, Any] | None:
     board: dict[str, dict[str, Any]] = state.get("board") or {}
     if not board:
@@ -308,7 +454,7 @@ def _details(state: dict[str, Any], cards: list[dict[str, Any]]) -> dict[str, An
     shops = [{**entry, "top": entry["slug"] == top, "shown": entry["slug"] in shown,
               "shown_total_minor": first[entry["slug"]]["total_minor"] if entry["slug"] in first else None,
               "shown_units": first[entry["slug"]]["units"] if entry["slug"] in first else None} for entry in board.values()]
-    return {"understood": state["understood"].get(basis, []), "shops": shops, "listed": state.get("listed")}
+    return {"understood": state["understood"].get(basis, []), "ask": state.get("ask", {}).get(basis, []), "shops": shops, "listed": state.get("listed")}
 
 
 def _listed(db, scope: tuple[str, str] | None) -> list[Merchant]:
