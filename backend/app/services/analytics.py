@@ -28,6 +28,9 @@ TAXONOMY = {
     "pickup_completed",
     "refund_verified",
     "stockout",
+    # Ask LastCall (the concierge agent) checked this shop for a shopper, and which of its bundles it showed.
+    "concierge_checked",
+    "concierge_suggested",
 }
 
 # Events the browser may report; everything else is emitted server-side only.

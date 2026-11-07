@@ -239,7 +239,7 @@ def _notify(watch: Watch, candidates: list[_Candidate]) -> bool:
             row = WatchMatch(id=new_id("wmt"), watch_id=watch.id, merchant_id=cand.merchant.id, signature=cand.sig, label=cand.opt["label"][:80],
                              summary=summary if is_pick else "", summary_source=source if is_pick else "skipped",
                              total_minor=cand.opt["totals"]["total_minor"], currency=cand.opt["totals"]["currency"],
-                             pickup_label=cand.pickup_label[:80], agent_run_id=run_id)
+                             pickup_label=cand.pickup_label[:80], agent_run_id=run_id, created_at=clock.now())
             try:
                 with db.begin_nested():
                     db.add(row)

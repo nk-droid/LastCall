@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -31,9 +31,9 @@ from app.ids import new_id
 from app.models import Conversation, Merchant
 from app.money import format_money
 from app.observability import redact
+from app.services import analytics, pickup, recommendation
 from app.services import intent as intent_service
-from app.services import pickup, recommendation
-from app.services.catalog import get_merchant, list_merchants
+from app.services.catalog import get_merchant, list_merchants, policy
 
 log = logging.getLogger(__name__)
 
@@ -132,7 +132,7 @@ def run_turn(conversation_id: str) -> None:
             scope_ref = (scope.slug, scope.name) if scope else None
             today = clock.local_date(scope.timezone if scope else "America/Los_Angeles").strftime("%A, %B %-d")
         state: dict[str, Any] = {
-            "conversation_id": conversation_id, "scope": scope_ref, "options": {}, "checked": [], "shops": {},
+            "conversation_id": conversation_id, "scope": scope_ref, "options": {}, "checked": [], "shops": {}, "merchant_ids": {}, "requests": {},
             "shopper_text": " ".join(m["text"] for m in messages if m["role"] == "user")[-600:],
         }
         result = run_agent(
@@ -142,6 +142,7 @@ def run_turn(conversation_id: str) -> None:
         )
         reply = _agent_reply(result, state) or _rules_reply(state, session_id)
         reply["run_id"] = result.run_id
+        _record_suggestions(state, session_id, reply)
     except Exception:  # the chat must always get an answer
         log.exception("concierge turn failed", extra={"conversation_id": conversation_id})
         reply, result = _message("Sorry, something went wrong on our side. Please try again.", source="system"), None
@@ -170,7 +171,7 @@ def _list_shops(ctx, args: ListShopsArgs) -> dict[str, Any]:
     _progress(ctx.state, "Looking at today's shops")
     now = clock.now()
     with transaction() as db:
-        cards = [merchant_card(db, m, now) for m in list_merchants(db)]
+        cards = [merchant_card(db, m, now) for m in _listed(db, ctx.state["scope"])]
     shops = []
     for c in cards:
         ctx.state["shops"][c["slug"]] = c["name"]
@@ -199,6 +200,8 @@ def _search(state: dict[str, Any], session_id: str, slug: str, args: FindBundles
             merchant = get_merchant(db, slug)
         except NotFound:
             raise ToolError(f"There is no open shop {slug!r}. Use a slug from list_shops.") from None
+        if not state["scope"] and not policy(merchant, "concierge_listed", True):
+            raise ToolError(f"There is no open shop {slug!r}. Use a slug from list_shops.")
         db.expunge(merchant)
     if slug not in state["checked"]:
         state["checked"].append(slug)
@@ -232,7 +235,57 @@ def _search(state: dict[str, Any], session_id: str, slug: str, args: FindBundles
     result: dict[str, Any] = {"shop": merchant.name, "applied": applied, "options": options}
     if not options and proposal.get("no_match"):
         result["no_match"] = {"headline": proposal["no_match"].get("headline"), "suggestions": proposal["no_match"].get("suggestions", [])[:3]}
+    # What the shop sees on its Assistant page: the request as structured facts (never the shopper's words).
+    request = _request(intent, merchant)
+    state["merchant_ids"][slug] = merchant.id
+    state["requests"][slug] = request
+    props: dict[str, Any] = {"conversation_id": state["conversation_id"], "options": len(options), "request": request}
+    if not options:
+        props["gap"] = (proposal.get("no_match") or {}).get("code", "other")
+    try:
+        with transaction() as db:
+            analytics.track(db, "concierge_checked", merchant_id=merchant.id, session_id=session_id, entity_type="proposal",
+                            entity_id=proposal["proposal_id"], properties=props)
+    except Exception:  # analytics must never break the chat
+        log.exception("failed to record concierge check")
     return result
+
+
+def _request(intent: dict[str, Any], merchant: Merchant) -> dict[str, Any]:
+    window = intent.get("pickup_window")
+    day = date.fromisoformat(intent["pickup_date"]) if intent.get("pickup_date") else clock.local_date(merchant.timezone)
+    if window and tuple(window) == pickup.window_for(merchant, day):
+        window = None  # the shop's whole pickup window: the shopper didn't ask for a time
+    return {
+        "party_size": intent.get("party_size"), "budget_minor": intent.get("budget_minor"), "currency": intent.get("currency", "USD"),
+        "exclusions": sorted({e["code"] for e in intent.get("exclusions", [])}), "dietary": list(intent.get("dietary", [])),
+        "preferences": list(intent.get("preferences", []))[:3], "occasion": intent.get("occasion"), "pickup_window": window,
+    }
+
+
+def _listed(db, scope: tuple[str, str] | None) -> list[Merchant]:
+    """Shops the assistant may suggest: every live shop that hasn't opted out (a chat on one storefront is that shop's own)."""
+    merchants = list_merchants(db)
+    return merchants if scope else [m for m in merchants if policy(m, "concierge_listed", True)]
+
+
+def _record_suggestions(state: dict[str, Any], session_id: str, reply: dict[str, Any]) -> None:
+    """One event per bundle shown to the shopper, on the shop's own timeline."""
+    try:
+        with transaction() as db:
+            for card in reply.get("cards", []):
+                slug = card["shop"]["slug"]
+                merchant_id = state["merchant_ids"].get(slug)
+                if not merchant_id:
+                    continue
+                analytics.track(db, "concierge_suggested", merchant_id=merchant_id, session_id=session_id, entity_type="proposal",
+                                entity_id=card["proposal_id"], properties={
+                                    "conversation_id": state["conversation_id"], "option_key": card["option_key"], "label": card["label"],
+                                    "units": card["units"], "total_minor": card["total_minor"], "currency": card["currency"],
+                                    "request": state["requests"].get(slug, {}), "source": reply.get("source"),
+                                })
+    except Exception:  # analytics must never break the chat
+        log.exception("failed to record concierge suggestions")
 
 
 def _controls(args: FindBundlesArgs, merchant: Merchant) -> intent_service.Controls:
@@ -313,7 +366,7 @@ def _rules_reply(state: dict[str, Any], session_id: str) -> dict[str, Any]:
     else:
         with transaction() as db:
             now = clock.now()
-            cards = [merchant_card(db, m, now) for m in list_merchants(db)]
+            cards = [merchant_card(db, m, now) for m in _listed(db, None)]
         slugs = [c["slug"] for c in cards if c["pickup"]["state"] == "open" and c["surplus"]["items_available"]][:MAX_SHOPS]
     for slug in slugs:
         try:

@@ -180,7 +180,7 @@ def generate(merchant_id: str, *, actor: str) -> dict[str, Any]:
             resolve_alerts(db, merchant.id, "closeout_ready", old.id)
         plan = AgentProposal(id=new_id("prp_co"), kind=KIND, merchant_id=merchant.id, run_id=result.run_id, subject_date=today,
                              status="pending" if proposed else "applied", source=source, summary=summary, actions=actions,
-                             created_by=actor[:120], expires_at=end)
+                             created_by=actor[:120], expires_at=end, created_at=clock.now())
         db.add(plan)
         if proposed:
             raise_alert(db, merchant.id, "closeout_ready", "proposal", plan.id,

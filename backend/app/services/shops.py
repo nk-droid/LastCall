@@ -49,6 +49,8 @@ DEFAULT_POLICIES: dict[str, Any] = {
     # Close-out assistant: an agent proposes end-of-day changes this many minutes before the last pickup window ends.
     "closeout_enabled": True,
     "closeout_lead_minutes": 60,
+    # Ask LastCall (the shopping concierge across all shops) may suggest this shop's bundles.
+    "concierge_listed": True,
     "tax_rates_bps": {"bakery": 0},
     "fees_minor": 0,
     "cancellation_policy_text": "You can request a cancellation up to 60 minutes before your pickup window starts. The shop reviews each request; approved cancellations are refunded in full to your PayPal payment method.",
@@ -334,10 +336,11 @@ def update_policies(ctx: StaffContext, patch: dict[str, Any]) -> dict[str, Any]:
                 raise _field_error("no_show_policy", "Unknown no-show policy")
             policies["no_show_policy"] = patch["no_show_policy"]
             customer_facing = True
-        if "closeout_enabled" in patch:
-            if not isinstance(patch["closeout_enabled"], bool):
-                raise _field_error("closeout_enabled", "Must be true or false")
-            policies["closeout_enabled"] = patch["closeout_enabled"]
+        for key in ("closeout_enabled", "concierge_listed"):
+            if key in patch:
+                if not isinstance(patch[key], bool):
+                    raise _field_error(key, "Must be true or false")
+                policies[key] = patch[key]
         if "relist_at_local" in patch:
             value = str(patch["relist_at_local"])
             if not _HHMM.match(value):
