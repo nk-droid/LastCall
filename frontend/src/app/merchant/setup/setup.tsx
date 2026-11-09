@@ -13,7 +13,7 @@ import type { ShopSettings } from "@/lib/types";
 import { useResource } from "@/lib/use-api";
 import { brand } from "@/theme/tokens";
 
-import { HoursSection, PayoutsSection, PoliciesSection, ProfileSection } from "../settings/sections";
+import { PayoutsSection, PickupSection, PoliciesSection, ProfileSection, type Drafts, type SectionKey } from "../settings/sections";
 
 type StepKey = ShopSettings["checklist"][number]["key"];
 
@@ -25,6 +25,7 @@ export function Setup() {
   const [open, setOpen] = useState<StepKey | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [drafts, setDrafts] = useState<Drafts>({});
   const s = settings.data;
   const owner = hasRole(staff, "owner");
 
@@ -35,6 +36,17 @@ export function Setup() {
   const nextOpen = open ?? s.checklist.find((c) => !c.done)?.key ?? null;
   const onSaved = (next: ShopSettings) => settings.setData(next);
   const status = s.shop.status;
+  // The same sections as Settings, each with its own draft that clears once saved.
+  const section = <K extends SectionKey>(key: K) => ({
+    settings: s,
+    draft: drafts[key],
+    setDraft: (draft: Drafts[K]) => setDrafts((all) => ({ ...all, [key]: draft })),
+    onSaved: (next: ShopSettings) => {
+      settings.setData(next);
+      setDrafts((all) => ({ ...all, [key]: undefined }));
+    },
+    onSettings: onSaved,
+  });
 
   async function submit() {
     setSubmitting(true);
@@ -53,13 +65,13 @@ export function Setup() {
   const body = (key: StepKey) => {
     switch (key) {
       case "profile":
-        return <ProfileSection settings={s} onSaved={onSaved} />;
+        return <ProfileSection {...section("profile")} />;
       case "hours":
-        return <HoursSection settings={s} onSaved={onSaved} />;
+        return <PickupSection {...section("pickup")} />;
       case "policies":
-        return <PoliciesSection settings={s} onSaved={onSaved} onConfirm={settings.reload} />;
+        return <PoliciesSection {...section("policies")} />;
       case "payouts":
-        return <PayoutsSection settings={s} onSaved={onSaved} owner={owner} />;
+        return <PayoutsSection {...section("payouts")} />;
       case "catalog":
         return (
           <SectionCard title="List your first products" icon={<Inventory2Rounded />}>

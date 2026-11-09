@@ -539,7 +539,11 @@ export type ShopSettings = {
     id: string; slug: string; name: string; category: string; tagline: string; description: string; phone: string; support_email: string;
     timezone: string; currency: string; address: Address; status: ShopStatus; is_showcase: boolean; review_note: string | null;
     submitted_at: string | null; approved_at: string | null;
-    verification: { verified_by?: string; verified_at?: string; checks?: string[]; policies_confirmed_at?: string; policies_confirmed_by?: string };
+    verification: {
+      verified_by?: string; verified_at?: string; checks?: string[]; policies_confirmed_at?: string; policies_confirmed_by?: string;
+      /** The policy version the owner reviewed; a later edit makes the review stale. */
+      policies_version?: number;
+    };
   };
   hours: Week;
   pickup: { windows: Week; slot_minutes: number; capacity: number };
