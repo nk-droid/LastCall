@@ -7,17 +7,19 @@ repeated wrong codes lock the order to managers.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app import clock
 from app.db import transaction
 from app.errors import Conflict, NotFound, Unprocessable
-from app.models import AuditEvent, BundleQuote, Merchant, Order, PaymentAttempt, Refund, Reservation, SupportRequest
+from app.models import AuditEvent, BundleQuote, Merchant, Order, PaymentAttempt, Refund, Reservation, SupportRequest, SystemState
 from app.security import verify_pickup_code
 from app.services import analytics, audit, notify, pickup
 from app.services import reservations as rsv
@@ -176,8 +178,12 @@ def fulfillment(user: StaffContext, order_id: str, req: FulfillmentAction) -> di
     return order_detail(user, order_id_out)
 
 
-def handoff(user: StaffContext, order_id: str, code: str) -> dict[str, Any]:
-    """Verify the customer's pickup code and complete the handoff. Deterministic; no model involved."""
+def handoff(user: StaffContext, order_id: str, code: str, mark_ready: bool = False) -> dict[str, Any]:
+    """Verify the customer's pickup code and complete the handoff. Deterministic; no model involved.
+
+    ``mark_ready`` lets the counter hand off an order that is still being packed when its customer is
+    already there: it becomes ready and picked up in one step, but only once the code matches.
+    """
     wrong = False
     with transaction() as db:
         merchant = merchant_by_id(db, user.merchant_id)
@@ -188,7 +194,7 @@ def handoff(user: StaffContext, order_id: str, code: str) -> dict[str, Any]:
             raise Conflict("Payment isn't verified for this order. Do not hand it off.", code="not_paid")
         if order.fulfillment_status == "PICKED_UP":
             raise Conflict("This order was already handed off", code="already_picked_up")
-        if order.fulfillment_status != "READY":
+        if order.fulfillment_status != "READY" and not (mark_ready and order.fulfillment_status in ("NEW", "PACKING")):
             raise Conflict("Mark the order ready before handing it off", code="not_ready")
         if order.pickup_attempts >= MAX_PICKUP_ATTEMPTS and not has_role(user.role, "manager"):
             raise Conflict("Too many incorrect codes. A manager must verify this pickup.", code="pickup_locked")
@@ -200,6 +206,13 @@ def handoff(user: StaffContext, order_id: str, code: str) -> dict[str, Any]:
             wrong = True
             remaining = max(0, MAX_PICKUP_ATTEMPTS - order.pickup_attempts)
         else:
+            if order.fulfillment_status != "READY":
+                # Packed at the counter: no "ready" email, the customer is standing there.
+                order.fulfillment_status = "READY"
+                order.ready_at = now
+                analytics.track(db, "pickup_ready", merchant_id=order.merchant_id, session_id=order.session_id, entity_type="order", entity_id=order.id)
+                audit.record(db, actor=user.actor, actor_role=user.role, entity_type="order", entity_id=order.id, action="fulfillment_ready",
+                             meta={"at_handoff": True}, trace_id=order.trace_id)
             res = db.get(Reservation, order.reservation_id, with_for_update=True)
             rsv.fulfill(db, res, merchant, now, user.actor, order.id)
             order.fulfillment_status = "PICKED_UP"
@@ -211,6 +224,108 @@ def handoff(user: StaffContext, order_id: str, code: str) -> dict[str, Any]:
     if wrong:
         raise Unprocessable(f"That code doesn't match this order. {remaining} attempt(s) left.", code="wrong_pickup_code", details={"remaining": remaining})
     return order_detail(user, order_id)
+
+
+# --------------------------------------------------------------------------- counter check-in
+
+# The Today page's check-in box finds the order from what the customer shows: the pass's QR
+# ("LASTCALL:LC-1058:4821"), an order number with its code ("1058 4821"), or the 4-digit code alone.
+# Codes are only stored as per-order hashes, so a code on its own is checked against each of the
+# shop's open orders. Because one box tries every order at once, misses are counted per shop and
+# lock the box for a while; a manager can unlock it.
+LOOKUP_MISSES = 5
+LOOKUP_WINDOW = timedelta(minutes=10)
+OPEN_FULFILLMENT = ("NEW", "PACKING", "READY")
+_SCANNED = re.compile(r"^LASTCALL:(LC-\d+):(\d{4})$", re.IGNORECASE)
+_NUMBER_AND_CODE = re.compile(r"^#?\s*(?:LC)?[-\s]?(\d{3,})\D+(\d{4})$", re.IGNORECASE)
+
+
+def parse_counter_code(raw: str) -> tuple[str | None, str]:
+    """(order number or None, 4-digit code) from a scan or what staff typed."""
+    text = raw.strip()
+    if match := _SCANNED.match(text):
+        return match.group(1).upper(), match.group(2)
+    if match := _NUMBER_AND_CODE.match(text):
+        return f"LC-{match.group(1)}", match.group(2)
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if len(digits) == 4 and not any(ch.isalpha() for ch in text):
+        return None, digits
+    raise Unprocessable("Scan the pickup pass, or type its 4-digit code.", code="bad_pickup_code")
+
+
+def order_lines(db: Session, order: Order) -> list[dict[str, Any]]:
+    return [{"name": line["name"], "qty": line["qty"], "line_total_minor": line.get("line_total_minor")} for line in _quote(db, order).item_lines]
+
+
+def _lookup_state(db: Session, merchant_id: str) -> SystemState:
+    key = f"pickup_lookup:{merchant_id}"
+    db.execute(insert(SystemState).values(key=key, value={"misses": [], "locked_until": None}).on_conflict_do_nothing(index_elements=["key"]))
+    return db.get(SystemState, key, with_for_update=True)
+
+
+def _locked_until(state: SystemState, now: datetime) -> datetime | None:
+    until = state.value.get("locked_until")
+    if not until:
+        return None
+    at = datetime.fromisoformat(until.replace("Z", "+00:00"))
+    return at if at > now else None
+
+
+def _locked(merchant: Merchant, until: datetime) -> Conflict:
+    return Conflict(f"Too many codes didn't match. Check-in is locked until {clock.display_time(until, merchant.timezone)}.",
+                    code="lookup_locked", details={"locked_until": clock.iso(until)})
+
+
+def lookup_pickup(user: StaffContext, raw: str) -> dict[str, Any]:
+    number, code = parse_counter_code(raw)
+    with transaction() as db:
+        merchant = merchant_by_id(db, user.merchant_id)
+        now = clock.now()
+        state = _lookup_state(db, merchant.id)
+        if until := _locked_until(state, now):
+            raise _locked(merchant, until)
+        query = select(Order).where(Order.merchant_id == merchant.id)
+        if number:
+            query = query.where(Order.order_number == number)
+        else:
+            day_start = clock.combine_local(clock.local_date(merchant.timezone), "00:00", merchant.timezone)
+            query = query.where(Order.payment_status == "CAPTURED", Order.fulfillment_status.in_(OPEN_FULFILLMENT)
+                                | ((Order.fulfillment_status == "PICKED_UP") & (Order.picked_up_at >= day_start)))
+        found = [o for o in db.scalars(query.limit(500)).all() if verify_pickup_code(o.id, code, o.pickup_code_hash)]
+        ready = sorted((o for o in found if o.payment_status == "CAPTURED" and o.fulfillment_status in OPEN_FULFILLMENT),
+                       key=lambda o: (o.pickup_starts_at, o.order_number))
+        if ready:
+            state.value = {"misses": [], "locked_until": None}
+            return {"code": code, "matches": [
+                {**order_summary(db, o, merchant, now), "lines": order_lines(db, o), "pickup_locked": o.pickup_attempts >= MAX_PICKUP_ATTEMPTS}
+                for o in ready
+            ]}
+        # A code that matches a finished order is a double scan, not a guess: say what happened and don't count it.
+        if done := next((o for o in found if o.fulfillment_status == "PICKED_UP"), None):
+            when = clock.display_time(done.picked_up_at, merchant.timezone) if done.picked_up_at else "earlier"
+            raise Conflict(f"#{done.order_number} was already picked up at {when}.", code="already_picked_up")
+        if other := next(iter(found), None):
+            why = "was cancelled" if other.fulfillment_status == "CANCELLED" else "isn't paid yet"
+            raise Conflict(f"#{other.order_number} {why}. Don't hand it over.", code="not_open")
+        cutoff = now - LOOKUP_WINDOW
+        misses = [m for m in state.value.get("misses", []) if datetime.fromisoformat(m.replace("Z", "+00:00")) > cutoff] + [clock.iso(now)]
+        locked = now + LOOKUP_WINDOW if len(misses) >= LOOKUP_MISSES else None
+        state.value = {"misses": [] if locked else misses, "locked_until": clock.iso(locked)}
+        remaining = 0 if locked else LOOKUP_MISSES - len(misses)
+        audit.record(db, actor=user.actor, actor_role=user.role, entity_type="merchant", entity_id=merchant.id,
+                     action="pickup_lookup_locked" if locked else "pickup_lookup_missed", meta={"remaining": remaining})
+    if locked:
+        raise _locked(merchant, locked)
+    raise Unprocessable(f"No open order uses {code}. {remaining} {'try' if remaining == 1 else 'tries'} left before check-in locks.",
+                        code="no_pickup_match", details={"remaining": remaining})
+
+
+def unlock_lookup(user: StaffContext) -> dict[str, Any]:
+    with transaction() as db:
+        state = _lookup_state(db, user.merchant_id)
+        state.value = {"misses": [], "locked_until": None}
+        audit.record(db, actor=user.actor, actor_role=user.role, entity_type="merchant", entity_id=user.merchant_id, action="pickup_lookup_unlocked")
+    return {"locked": False}
 
 
 # --------------------------------------------------------------------------- refunds

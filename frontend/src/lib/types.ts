@@ -441,14 +441,24 @@ export type OrderSummary = {
 
 export type Alert = { id: string; kind: string; severity: "high" | "medium" | "low"; message: string; entity_type: string; entity_id: string; created_at: string };
 
+/** An order's items as the counter sees them. */
+export type OrderLine = { name: string; qty: number; line_total_minor: number | null };
+
+/** A pickup-queue entry on Today: paid and not yet handed off, or still paying (its units on hold). */
+export type OpenOrder = OrderSummary & { lines: OrderLine[]; hold_expires_at: string | null };
+
+/** What POST /api/merchant/pickups/lookup found for a scanned pass or a typed code. Handoff is a separate step. */
+export type PickupLookup = { code: string; matches: (OrderSummary & { lines: OrderLine[]; pickup_locked: boolean })[] };
+
 export type Overview = {
   as_of: string;
   shop: { name: string; status: ShopStatus; timezone: string; pickup_paused: boolean };
   counters: { surplus_units: number; available_units: number; reserved_units: number; committed_units: number; sold_units_today: number };
   orders: { awaiting_pickup: number; ready: number; payment_pending: number; picked_up_today: number };
+  sales: { amount_minor: number; currency: string; paid_orders: number };
   slots: Slot[];
-  top_surplus: InventoryRow[];
-  recent_orders: OrderSummary[];
+  open_orders: OpenOrder[];
+  stock: (InventoryRow & { sold_today: number })[];
   alerts: Alert[];
   stale_inventory: { sku: string; name: string; updated_at: string }[];
   paypal: { payouts: PayoutStatus; reachable: boolean | null; checked_at: string | null };

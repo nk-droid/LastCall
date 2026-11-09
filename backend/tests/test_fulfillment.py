@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from app import clock
 from app.db import transaction
-from app.models import InventoryLot, Merchant, Product
+from app.models import InventoryLot, Merchant, Product, SystemState
 from app.security import pickup_code, pickup_code_hash, verify_pickup_code
 
 from .factories import member_client
@@ -67,6 +67,70 @@ def test_at10_repeated_wrong_codes_lock_staff_out(client, app):
     assert locked.status_code == 409 and locked.json()["error"]["code"] == "pickup_locked"
     manager = _member(app, "manager")
     assert ok(manager.post(f"/api/merchant/orders/{co['order_id']}/handoff", json={"pickup_code": view["pickup"]["code"]}))["fulfillment_status"] == "PICKED_UP"
+
+
+def _number(app, order_id: str) -> str:
+    return ok(_member(app).get(f"/api/merchant/orders/{order_id}"))["number"]
+
+
+def test_counter_lookup_finds_the_order_from_a_scan_a_typed_code_or_number_and_code(client, app):
+    co, view = buy(client, [("CR-01", 2)])
+    code, number = view["pickup"]["code"], _number(app, co["order_id"])
+    staff = _member(app)
+    for typed in (f"LASTCALL:{number}:{code}", code, f"{code[:2]} {code[2:]}", f"{number.removeprefix('LC-')} {code}", f"#{number} · {code}"):
+        found = ok(staff.post("/api/merchant/pickups/lookup", json={"code": typed}))
+        assert found["code"] == code and [m["id"] for m in found["matches"]] == [co["order_id"]], typed
+    match = found["matches"][0]
+    assert match["fulfillment_status"] == "NEW" and match["lines"][0]["qty"] == 2 and match["pickup_locked"] is False
+    # Looking up hands nothing off.
+    assert ok(staff.get(f"/api/merchant/orders/{co['order_id']}"))["fulfillment_status"] == "NEW"
+    bad = staff.post("/api/merchant/pickups/lookup", json={"code": "hello there"})
+    assert bad.status_code == 422 and bad.json()["error"]["code"] == "bad_pickup_code"
+
+
+def test_counter_lookup_locks_after_five_misses_until_a_manager_unlocks(client, app):
+    co, view = buy(client, [("BR-02", 1)])
+    code, staff = view["pickup"]["code"], _member(app)
+    for left in (4, 3, 2, 1):
+        miss = staff.post("/api/merchant/pickups/lookup", json={"code": _wrong(code)})
+        assert miss.status_code == 422 and miss.json()["error"]["code"] == "no_pickup_match"
+        assert miss.json()["error"]["details"]["remaining"] == left
+    locked = staff.post("/api/merchant/pickups/lookup", json={"code": _wrong(code)})
+    assert locked.status_code == 409 and locked.json()["error"]["code"] == "lookup_locked"
+    # Locked for everyone, even with the right code; misses don't touch the order's own attempt count.
+    assert staff.post("/api/merchant/pickups/lookup", json={"code": code}).json()["error"]["code"] == "lookup_locked"
+    assert ok(staff.get(f"/api/merchant/orders/{co['order_id']}"))["pickup_attempts"] == 0
+    assert staff.post("/api/merchant/pickups/lookup/unlock").status_code == 403
+    ok(_member(app, "manager").post("/api/merchant/pickups/lookup/unlock"))
+    assert ok(staff.post("/api/merchant/pickups/lookup", json={"code": code}))["matches"][0]["id"] == co["order_id"]
+
+
+def test_counter_lookup_lock_expires_and_a_double_scan_is_not_a_miss(client, app):
+    co, view = buy(client, [("BR-02", 1)])
+    code, staff = view["pickup"]["code"], _member(app)
+    for _ in range(5):
+        staff.post("/api/merchant/pickups/lookup", json={"code": _wrong(code)})
+    clock.advance(timedelta(minutes=11))
+    assert ok(staff.post("/api/merchant/pickups/lookup", json={"code": code}))["matches"]
+    ok(staff.post(f"/api/merchant/orders/{co['order_id']}/handoff", json={"pickup_code": code, "mark_ready": True}))
+    again = staff.post("/api/merchant/pickups/lookup", json={"code": code})
+    assert again.status_code == 409 and again.json()["error"]["code"] == "already_picked_up"
+    with transaction() as db:
+        state = db.get(SystemState, f"pickup_lookup:{shop_id()}")
+        assert state.value["misses"] == [] and state.value["locked_until"] is None
+
+
+def test_handoff_can_mark_ready_at_the_counter_but_only_with_the_right_code(client, app):
+    co, view = buy(client, [("CR-01", 1)])
+    code, staff = view["pickup"]["code"], _member(app)
+    not_ready = staff.post(f"/api/merchant/orders/{co['order_id']}/handoff", json={"pickup_code": code})
+    assert not_ready.status_code == 409 and not_ready.json()["error"]["code"] == "not_ready"
+    wrong = staff.post(f"/api/merchant/orders/{co['order_id']}/handoff", json={"pickup_code": _wrong(code), "mark_ready": True})
+    assert wrong.status_code == 422
+    assert ok(staff.get(f"/api/merchant/orders/{co['order_id']}"))["fulfillment_status"] == "NEW"
+    done = ok(staff.post(f"/api/merchant/orders/{co['order_id']}/handoff", json={"pickup_code": code, "mark_ready": True}))
+    assert done["fulfillment_status"] == "PICKED_UP"
+    assert any(e["action"] == "fulfillment_ready" and e["meta"].get("at_handoff") for e in done["timeline"])
 
 
 def test_at10_unpaid_order_cannot_be_handed_off(client, app):

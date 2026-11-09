@@ -16,6 +16,12 @@ router = APIRouter(prefix="/api/merchant", tags=["merchant"])
 
 class HandoffRequest(BaseModel):
     pickup_code: str = Field(min_length=4, max_length=12)
+    # The customer is at the counter while the order is still being packed: make it ready and hand it off together.
+    mark_ready: bool = False
+
+
+class LookupRequest(BaseModel):
+    code: str = Field(min_length=4, max_length=60)
 
 
 class DeclineRequest(BaseModel):
@@ -45,7 +51,18 @@ def update_fulfillment(order_id: str, req: fulfillment.FulfillmentAction, ctx: S
 @router.post("/orders/{order_id}/handoff", dependencies=[Depends(rate_limit("handoff", 30))])
 def handoff(order_id: str, req: HandoffRequest, ctx: StaffContext = Depends(staff_role())) -> dict[str, Any]:
     """Verify the pickup code and complete fulfillment (staff action; no model involved)."""
-    return fulfillment.handoff(ctx, order_id, req.pickup_code)
+    return fulfillment.handoff(ctx, order_id, req.pickup_code, mark_ready=req.mark_ready)
+
+
+@router.post("/pickups/lookup", dependencies=[Depends(rate_limit("handoff", 30))])
+def lookup_pickup(req: LookupRequest, ctx: StaffContext = Depends(staff_role())) -> dict[str, Any]:
+    """Find the open order(s) for a scanned pickup pass or a typed code. Looks only; handoff is a separate step."""
+    return fulfillment.lookup_pickup(ctx, req.code)
+
+
+@router.post("/pickups/lookup/unlock")
+def unlock_lookup(ctx: StaffContext = Depends(staff_role("manager"))) -> dict[str, Any]:
+    return fulfillment.unlock_lookup(ctx)
 
 
 @router.post("/orders/{order_id}/refund")
