@@ -9,7 +9,7 @@ come from the quotes and orders that followed.
 from __future__ import annotations
 
 from collections import Counter
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -25,7 +25,9 @@ from app.services.access import StaffContext
 from app.services.catalog import merchant_by_id, policy
 
 WINDOW_DAYS = 7
-FEED_LIMIT = 30
+# Newest items per assistant (Ask LastCall's suggestions and passes count together), so a busy week of
+# suggestions can't push close-out plans or watch alerts out of the feed.
+FEED_PER_ASSISTANT = 15
 PAID = "CAPTURED"
 
 
@@ -52,12 +54,7 @@ def activity(ctx: StaffContext) -> dict[str, Any]:
 
         suggested = [e for e in events if e.event_name == "concierge_suggested"]
         suggested_convs = {e.properties.get("conversation_id") for e in suggested}
-        # A shop is "passed on" once per conversation, and only if none of its bundles were shown in it.
-        skipped: dict[str, AnalyticsEvent] = {}
-        for e in events:
-            conv = e.properties.get("conversation_id")
-            if e.event_name == "concierge_checked" and not e.properties.get("options") and conv not in suggested_convs:
-                skipped.setdefault(conv, e)
+        skipped = _passed_on(events)
 
         feed: list[dict[str, Any]] = []
         for p in plans:
@@ -85,6 +82,13 @@ def activity(ctx: StaffContext) -> dict[str, Any]:
             item["time_label"] = clock.display_time(at, tz)
         gaps = Counter(_gap_label(e.properties.get("gap", "other"), e.properties.get("request", {})) for e in skipped.values())
 
+        # What came of it this week: suggestions that led to a paid order, alerts the shopper opened or bought from.
+        ordered_suggestions = sum(1 for e in suggested
+                                  if (outcome.get(("proposal", e.entity_id, e.properties.get("option_key"))) or {}).get("label") == "Ordered")
+        alert_outcomes = [outcome.get(("match", m.id, None)) for m in matches]
+        alerts_opened = sum(1 for m, result in zip(matches, alert_outcomes, strict=True) if m.opened_at or result)
+        alerts_ordered = sum(1 for result in alert_outcomes if result and result.get("label") == "Ordered")
+
         today_plan = next((p for p in plans if p.subject_date == today.isoformat()), None)
         sched = closeout.schedule(merchant)
         return {
@@ -100,10 +104,12 @@ def activity(ctx: StaffContext) -> dict[str, Any]:
                     "listed": bool(policy(merchant, "concierge_listed", True)),
                     "suggested_today": len({e.properties.get("conversation_id") for e in suggested if e.created_at >= day_start}),
                     "suggested_week": len(suggested_convs),
+                    "ordered_week": ordered_suggestions,
                 },
-                "watch": {"alerts_today": sum(1 for m in matches if m.created_at >= day_start), "alerts_week": len(matches), "watching": watching},
+                "watch": {"alerts_today": sum(1 for m in matches if m.created_at >= day_start), "alerts_week": len(matches), "watching": watching,
+                          "opened_week": alerts_opened, "ordered_week": alerts_ordered},
             },
-            "feed": feed[:FEED_LIMIT],
+            "feed": _per_assistant(feed),
             "gaps": [{"label": label, "count": n} for label, n in gaps.most_common(5)],
             "policies": {"closeout_enabled": sched["enabled"], "concierge_listed": bool(policy(merchant, "concierge_listed", True))},
             "can_edit": ctx.role in ("manager", "owner"),
@@ -111,6 +117,18 @@ def activity(ctx: StaffContext) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- feed items
+
+
+def _per_assistant(feed: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the newest FEED_PER_ASSISTANT items of each assistant; ``feed`` is already newest first."""
+    seen: Counter[str] = Counter()
+    kept = []
+    for item in feed:
+        owner = "concierge" if item["kind"].startswith("concierge") else item["kind"]
+        if seen[owner] < FEED_PER_ASSISTANT:
+            seen[owner] += 1
+            kept.append(item)
+    return kept
 
 
 def _item(at, kind: str, title: str, detail: str, status: dict[str, str] | None, key: str, action: str | None = None) -> dict[str, Any]:
@@ -142,6 +160,42 @@ def _plan_item(plan: AgentProposal, now) -> dict[str, Any]:
         detail += " · simple rules plan"
     return _item(plan.created_at, "closeout", "Close-out drafted a plan", detail, _plan_status(plan, now), f"plan:{plan.id}",
                  action="review" if _open(plan, now) else None)
+
+
+def _passed_on(events: list[AnalyticsEvent]) -> dict[str, AnalyticsEvent]:
+    """Ask LastCall checks where the shop had nothing to offer: once per conversation, and only if none of its
+    bundles were shown in it. ``events`` are newest first, so each conversation keeps its latest check."""
+    suggested_convs = {e.properties.get("conversation_id") for e in events if e.event_name == "concierge_suggested"}
+    skipped: dict[str, AnalyticsEvent] = {}
+    for e in events:
+        conv = e.properties.get("conversation_id")
+        if e.event_name == "concierge_checked" and not e.properties.get("options") and conv not in suggested_convs:
+            skipped.setdefault(conv, e)
+    return skipped
+
+
+def missed_demand(db, merchant_id: str, since: datetime, until: datetime) -> dict[str, Any]:
+    """What shoppers asked for that the shop couldn't offer, and who is waiting for its items (for Insights)."""
+    events = db.scalars(select(AnalyticsEvent).where(AnalyticsEvent.merchant_id == merchant_id, AnalyticsEvent.created_at >= since,
+                                                     AnalyticsEvent.created_at <= until,
+                                                     AnalyticsEvent.event_name.in_(("concierge_checked", "concierge_suggested")))
+                        .order_by(AnalyticsEvent.created_at.desc())).all()
+    gaps = Counter(_gap_label(e.properties.get("gap", "other"), e.properties.get("request", {})) for e in _passed_on(events).values())
+    matches = db.scalars(select(WatchMatch).where(WatchMatch.merchant_id == merchant_id, WatchMatch.created_at >= since,
+                                                  WatchMatch.created_at <= until, WatchMatch.email_message_id.is_not(None))).all()
+    outcome = _outcomes(db, [], matches)
+    now = clock.now()
+    watching = db.scalar(select(func.count()).select_from(Watch).where(
+        Watch.status == "active", Watch.expires_at > now, or_(Watch.merchant_id == merchant_id, Watch.merchant_id.is_(None)))) or 0
+    top = gaps.most_common(3)
+    rest = sum(gaps.values()) - sum(n for _, n in top)
+    return {
+        "requests": [{"label": label, "count": n} for label, n in top] + ([{"label": "Other requests", "count": rest}] if rest else []),
+        "total": sum(gaps.values()),
+        "watching": watching,
+        "alerts": len(matches),
+        "alerts_ordered": sum(1 for m in matches if (outcome.get(("match", m.id, None)) or {}).get("label") == "Ordered"),
+    }
 
 
 def _outcomes(db, events: list[AnalyticsEvent], matches: list[WatchMatch]) -> dict[tuple[str, str, str | None], dict[str, str]]:
