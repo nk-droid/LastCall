@@ -31,8 +31,16 @@ def list_inventory(ctx: StaffContext = Depends(staff_role())) -> dict[str, Any]:
     with transaction() as db:
         merchant = merchant_by_id(db, ctx.merchant_id)
         now = clock.now()
-        return {"rows": inventory.inventory_rows(db, merchant, now), "as_of": clock.iso(now), "timezone": merchant.timezone,
-                "currency": merchant.currency, "alerts": alerts.open_alerts(db, merchant.id)}
+        rows = inventory.inventory_rows(db, merchant, now)
+        sold = inventory.sold_today(db, merchant, now)
+        window = pickup.window_for(merchant, clock.local_date(merchant.timezone))
+        relist = (merchant.policies or {}).get("relist_at_local")
+        return {"rows": [{**r, "sold_today": sold.get(r["product_id"], 0)} for r in rows], "as_of": clock.iso(now),
+                "timezone": merchant.timezone, "currency": merchant.currency, "alerts": alerts.open_alerts(db, merchant.id),
+                # For the header: when "Repeat daily" items go back on sale, and when today's pickup ends.
+                "schedule": {"relist_label": pickup.time_label(relist) if relist and any(r["relist"]["enabled"] for r in rows) else None,
+                             "pickup_until_label": pickup.time_label(window[1]) if window else None,
+                             "pickup_paused": merchant.pickup_paused}}
 
 
 @router.post("/inventory")

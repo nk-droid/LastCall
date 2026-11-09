@@ -189,6 +189,11 @@ def pickup_status(db: Session, merchant: Merchant, now: datetime | None = None) 
     }
 
 
+def time_label(hhmm: str) -> str:
+    """'23:59' -> '11:59 PM'."""
+    return _fmt(hhmm) or hhmm
+
+
 def _fmt(hhmm: str | None) -> str | None:
     if not hhmm:
         return None

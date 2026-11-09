@@ -415,6 +415,8 @@ export type InventoryRow = {
   per_order_limit: number;
   surplus_priority: number;
   relist: { enabled: boolean; qty: number; cutoff_local: string | null };
+  /** Units sold today; only on the inventory list. */
+  sold_today?: number;
 };
 
 export type OrderSummary = {
