@@ -415,6 +415,8 @@ export type InventoryRow = {
   per_order_limit: number;
   surplus_priority: number;
   relist: { enabled: boolean; qty: number; cutoff_local: string | null };
+  /** Units sold today; only on the inventory list. */
+  sold_today?: number;
 };
 
 export type OrderSummary = {
@@ -441,14 +443,24 @@ export type OrderSummary = {
 
 export type Alert = { id: string; kind: string; severity: "high" | "medium" | "low"; message: string; entity_type: string; entity_id: string; created_at: string };
 
+/** An order's items as the counter sees them. */
+export type OrderLine = { name: string; qty: number; line_total_minor: number | null };
+
+/** A pickup-queue entry on Today: paid and not yet handed off, or still paying (its units on hold). */
+export type OpenOrder = OrderSummary & { lines: OrderLine[]; hold_expires_at: string | null };
+
+/** What POST /api/merchant/pickups/lookup found for a scanned pass or a typed code. Handoff is a separate step. */
+export type PickupLookup = { code: string; matches: (OrderSummary & { lines: OrderLine[]; pickup_locked: boolean })[] };
+
 export type Overview = {
   as_of: string;
   shop: { name: string; status: ShopStatus; timezone: string; pickup_paused: boolean };
   counters: { surplus_units: number; available_units: number; reserved_units: number; committed_units: number; sold_units_today: number };
   orders: { awaiting_pickup: number; ready: number; payment_pending: number; picked_up_today: number };
+  sales: { amount_minor: number; currency: string; paid_orders: number };
   slots: Slot[];
-  top_surplus: InventoryRow[];
-  recent_orders: OrderSummary[];
+  open_orders: OpenOrder[];
+  stock: (InventoryRow & { sold_today: number })[];
   alerts: Alert[];
   stale_inventory: { sku: string; name: string; updated_at: string }[];
   paypal: { payouts: PayoutStatus; reachable: boolean | null; checked_at: string | null };
@@ -473,6 +485,39 @@ export type OrderDetail = OrderSummary & {
   support: { id: string; topic: string; message: string; ai_draft: string; ai_draft_source: string; status: string; staff_reply: string | null; replied_by: string | null; created_at: string }[];
   timeline: { at: string; action: string; actor: string; entity: string; meta: Record<string, unknown> }[];
   trace_id: string;
+};
+
+export type InsightsItem = {
+  product_id: string; name: string; image: ImageRef; category: string; relist_daily: boolean;
+  sold: number; listed: number; left: number | null; left_days: number; sold_out_days: number; sold_out_by: string | null; days: number;
+  suggestion: { kind: "more" | "fewer" | "keep" | "early"; label: string };
+};
+
+/** The owner's view of a week or a month (GET /api/merchant/insights/summary). */
+export type InsightsSummary = {
+  period: "7d" | "30d";
+  days: number;
+  start: string;
+  end: string;
+  compare_start: string;
+  compare_end: string;
+  currency: string;
+  headline: {
+    net_sales_minor: number; prev_net_sales_minor: number; prev_daily_average_minor: number; change: number | null;
+    orders: number; average_order_minor: number; refunded_minor: number;
+    menu_value_minor: number; paid_value_minor: number; saved_minor: number; recovered: number | null;
+    sold_units: number; listed_units: number;
+    left_at_close: { units: number; menu_value_minor: number; prev_units: number; closed_days: number } | null;
+  };
+  sales_by_day: { date: string; sales_minor: number; orders: number; today: boolean }[];
+  orders_by_hour: number[];
+  busiest: { start: number; end: number; label: string; share: number } | null;
+  pickup: { slot_fill: number | null; slot_fill_label: string | null; no_shows: number; median_wait_minutes: number | null };
+  items: InsightsItem[];
+  rule: string;
+  missed: { requests: { label: string; count: number }[]; total: number; watching: number; alerts: number; alerts_ordered: number };
+  caution: string | null;
+  computed_at: string;
 };
 
 export type Metric = { value: number | null; numerator?: number; denominator?: number; definition: string };
@@ -529,7 +574,11 @@ export type ShopSettings = {
     id: string; slug: string; name: string; category: string; tagline: string; description: string; phone: string; support_email: string;
     timezone: string; currency: string; address: Address; status: ShopStatus; is_showcase: boolean; review_note: string | null;
     submitted_at: string | null; approved_at: string | null;
-    verification: { verified_by?: string; verified_at?: string; checks?: string[]; policies_confirmed_at?: string; policies_confirmed_by?: string };
+    verification: {
+      verified_by?: string; verified_at?: string; checks?: string[]; policies_confirmed_at?: string; policies_confirmed_by?: string;
+      /** The policy version the owner reviewed; a later edit makes the review stale. */
+      policies_version?: number;
+    };
   };
   hours: Week;
   pickup: { windows: Week; slot_minutes: number; capacity: number };
@@ -566,6 +615,8 @@ export type ConciergeCard = {
   fits: FitEvidence[];
   pickup_label: string | null;
   default_slot_id: string | null;
+  /** Each part of the request beside what this bundle does about it. */
+  checks?: { key: string; asked: string; answer: string; ok: boolean; strict?: boolean }[];
 };
 
 export type ConciergeMessage = {
@@ -581,6 +632,8 @@ export type ConciergeMessage = {
 /** What a reply was based on: the request as understood, and every shop checked this turn. */
 export type ConciergeDetails = {
   understood: { key: string; label: string; strict: boolean; editable: boolean }[];
+  /** The request as one sentence; parts with a key are the ones the shopper can tap. */
+  ask?: { text: string; key?: string }[];
   shops: {
     slug: string; name: string; options: number; currency: string; from_minor: number | null; reason: string | null;
     left_out: string[]; left_out_count: number; top: boolean; shown: boolean; shown_total_minor: number | null; shown_units: number | null;

@@ -5,6 +5,7 @@ Shops see shoppers' requests only as structured facts, never their words; a shop
 from __future__ import annotations
 
 import json
+from collections import Counter
 from datetime import timedelta
 
 import pytest
@@ -67,7 +68,7 @@ def test_each_shop_sees_what_ask_lastcall_did_for_it_as_facts(app, client, fixtu
     assert suggested["title"] == "Ask LastCall suggested your bundle" and suggested["status"] is None
     assert suggested["detail"].startswith("4 people · under $10.00 · no peanuts · ")
     assert "pickup" not in suggested["detail"]  # no time was asked for, so the shop's whole window isn't shown as one
-    assert juniper["teammates"]["concierge"] == {"listed": True, "suggested_today": 1, "suggested_week": 1}
+    assert juniper["teammates"]["concierge"] == {"listed": True, "suggested_today": 1, "suggested_week": 1, "ordered_week": 0}
     assert juniper["gaps"] == []
 
     [passed] = owl["feed"]
@@ -104,6 +105,14 @@ def test_a_shop_can_opt_out_of_ask_lastcall(app, client, fixture_llm, night_owl)
     assert ok(client.get(f"/api/concierge/{started['id']}"))["messages"][-1]["cards"]
 
 
+def test_a_busy_assistant_cannot_push_the_others_out_of_the_feed():
+    from app.services.assistant import FEED_PER_ASSISTANT, _per_assistant
+    feed = ([{"kind": "concierge"}] * 20 + [{"kind": "concierge_skip"}] * 5 + [{"kind": "watch"}] * 2 + [{"kind": "closeout"}] * 3)
+    kinds = Counter(i["kind"] for i in _per_assistant(feed))
+    assert kinds["concierge"] + kinds["concierge_skip"] == FEED_PER_ASSISTANT
+    assert kinds["watch"] == 2 and kinds["closeout"] == 3
+
+
 def test_close_out_plans_and_watch_alerts_join_the_feed(app):
     manager = member_client(app, shop_id(), "manager")[0]
     clock.advance(timedelta(hours=3, minutes=5))  # 6:05 PM, an hour before pickup ends: the rules plan (model off)
@@ -133,7 +142,7 @@ def test_close_out_plans_and_watch_alerts_join_the_feed(app):
     assert drafted["action"] == "review" and drafted["status"]["label"] == "Waiting for your OK" and "price cut" in drafted["detail"]
     assert drafted["day"] == view["today"] and drafted["time_label"] == "6:05 PM"
     assert view["teammates"]["closeout"]["waiting"] is True
-    assert view["teammates"]["watch"] == {"alerts_today": 1, "alerts_week": 1, "watching": 1}
+    assert view["teammates"]["watch"] == {"alerts_today": 1, "alerts_week": 1, "watching": 1, "opened_week": 0, "ordered_week": 0}
     assert view["can_edit"] is True
 
     ok(manager.post(f"/api/merchant/closeout/{plan['id']}/dismiss"))

@@ -16,11 +16,11 @@ import type { ConciergeCard } from "@/lib/types";
 
 const FIT_ICON: Record<string, Icon> = { party: GroupsRounded, budget: AccountBalanceWalletRounded, exclusions: VerifiedUserRounded, pickup: ScheduleRounded };
 
-export function BundleCard({ card, top }: { card: ConciergeCard; top?: boolean }) {
+/** Hold & pay: quote the bundle (stock and price checked again) and go to the normal review page. */
+export function useHold(card: ConciergeCard) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const fits = card.fits.filter((f) => f.key !== "savings");
   async function hold() {
     setBusy(true);
     setError(null);
@@ -32,6 +32,12 @@ export function BundleCard({ card, top }: { card: ConciergeCard; top?: boolean }
       setBusy(false);
     }
   }
+  return { busy, error, hold };
+}
+
+export function BundleCard({ card, top }: { card: ConciergeCard; top?: boolean }) {
+  const { busy, error, hold } = useHold(card);
+  const fits = card.fits.filter((f) => f.key !== "savings");
   return (
     <Box component="article" aria-label={`${card.shop.name}: ${card.label}`}
       sx={{ ...surface.raisedSm, ...(top ? { border: `2px solid ${brand.leaf}` } : {}), borderRadius: "16px", p: 2, display: "flex", flexDirection: "column", gap: 1.25, minWidth: 0 }}>

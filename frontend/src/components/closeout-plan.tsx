@@ -16,15 +16,18 @@ import { SectionCard, StatusChip, brand, tones, type Tone } from "@/components/u
 import { api, errorMessage } from "@/lib/api";
 import { hhmmLabel } from "@/lib/format";
 import type { CloseoutAction, CloseoutPlan, CloseoutState, Slot } from "@/lib/types";
-import { useResource, useSecondsUntil } from "@/lib/use-api";
+import { useResource, useSecondsUntil, type Resource } from "@/lib/use-api";
 
 const RESULT: Record<string, { tone: Tone; label: string }> = {
   applied: { tone: "success", label: "Applied" }, skipped: { tone: "warning", label: "Skipped" }, failed: { tone: "danger", label: "Failed" },
 };
 
-export function CloseoutCard({ slots = [] }: { slots?: Slot[] }) {
+/** `state` lets a page share one close-out fetch with other widgets; `showSchedule` hides the countdown and slot
+ *  strip when the page already shows when pickup ends (Today's headline strip does). */
+export function CloseoutCard({ slots = [], state: shared, showSchedule = true }: { slots?: Slot[]; state?: Resource<CloseoutState>; showSchedule?: boolean }) {
   const announce = useAnnounce();
-  const state = useResource((signal) => api<CloseoutState>("/api/merchant/closeout", { signal }), [], { pollMs: 60_000 });
+  const own = useResource((signal) => api<CloseoutState>("/api/merchant/closeout", { signal }), [], { pollMs: 60_000, enabled: !shared });
+  const state = shared ?? own;
   const [busy, setBusy] = useState<"run" | "apply" | "dismiss" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
@@ -77,11 +80,13 @@ export function CloseoutCard({ slots = [] }: { slots?: Slot[] }) {
       {error ? <Alert severity="error" role="alert" sx={{ mb: 2 }}>{error}</Alert> : null}
       {!s ? null : (
         <Stack spacing={2.5}>
-          <Box component="aside" aria-label="Pickup today"
-            sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "minmax(250px, 300px) minmax(0, 1fr)" }, alignItems: "stretch" }}>
-            <Countdown opensAt={s.schedule.opens_at} closesAt={s.schedule.closes_at} closesLabel={s.schedule.closes_at_label} />
-            <SlotStrip slots={slots} actions={open ? proposed : []} now={now} />
-          </Box>
+          {showSchedule ? (
+            <Box component="aside" aria-label="Pickup today"
+              sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "minmax(250px, 300px) minmax(0, 1fr)" }, alignItems: "stretch" }}>
+              <Countdown opensAt={s.schedule.opens_at} closesAt={s.schedule.closes_at} closesLabel={s.schedule.closes_at_label} />
+              <SlotStrip slots={slots} actions={open ? proposed : []} now={now} />
+            </Box>
+          ) : null}
           <Box sx={{ minWidth: 0 }}>
             {open && proposed.length ? (
               <DiffTable actions={proposed} editable={s.can_apply} unchecked={unchecked} onToggle={toggle} />
@@ -128,7 +133,7 @@ export function CloseoutCard({ slots = [] }: { slots?: Slot[] }) {
 
 // ----------------------------------------------------------------------------- plan table
 
-function changeLabel(a: CloseoutAction): string {
+export function changeLabel(a: CloseoutAction): string {
   if (a.type === "close_slot") return `Close ${a.slot_label} slot`;
   if (a.type === "reopen_slot") return `Reopen ${a.slot_label} slot`;
   if (a.type === "set_slot_capacity") return `${a.slot_label} slot`;
@@ -136,7 +141,7 @@ function changeLabel(a: CloseoutAction): string {
   return a.name ?? a.title ?? a.type.replace(/_/g, " ");
 }
 
-function cut(a: CloseoutAction): string | null {
+export function cut(a: CloseoutAction): string | null {
   if (a.type !== "lower_price" || !a.old_sale_minor || !a.new_sale_minor) return null;
   return `−${Math.round((1 - a.new_sale_minor / a.old_sale_minor) * 100)}%`;
 }
@@ -228,7 +233,7 @@ function Footer({ dropped, source, expires }: { dropped: CloseoutAction[]; sourc
 
 // ----------------------------------------------------------------------------- countdown and slots
 
-function duration(seconds: number): string {
+export function duration(seconds: number): string {
   const m = Math.ceil(seconds / 60);
   if (m < 60) return `${m}m`;
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;

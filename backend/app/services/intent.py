@@ -462,7 +462,7 @@ def _fmt12(hhmm: str) -> str:
     return f"{(h % 12) or 12}:{m:02d} {'AM' if h < 12 else 'PM'}"
 
 
-_PREF_LABELS = {
+PREF_LABELS = {
     "sweet": "Sweet", "savory": "Savory", "sweet_and_savory": "Sweet & savory", "variety": "Variety",
     "bread": "Bread", "pastries": "Pastries", "chocolate": "Chocolate", "fruit": "Fruit",
     "kid_friendly": "Kid-friendly", "handheld": "Handheld", "shareable": "Shareable",
@@ -489,7 +489,7 @@ def _fields(intent: Intent, sources: dict[str, str], origin: dict[str, str], mer
     else:
         fields.append({"key": "pickup", "label": f"Any pickup time {day}", "source": "default", "status": "default"})
     for pref in intent.preferences:
-        fields.append({"key": f"preference:{pref}", "label": _PREF_LABELS.get(pref, pref), "source": "text", "status": "soft"})
+        fields.append({"key": f"preference:{pref}", "label": PREF_LABELS.get(pref, pref), "source": "text", "status": "soft"})
     for note in notes:
         fields.append({"key": "note", "label": note, "source": "system", "status": "note"})
     return fields

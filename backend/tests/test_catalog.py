@@ -14,6 +14,7 @@ from app.services import inventory, shops
 from .conftest import new_client
 from .factories import member_client
 from .fixtures import seed_bakery
+from .helpers import buy, ok, shop_id
 
 NEW_PRODUCT = {
     "sku": "PB-20", "name": "Pumpkin bread (slice)", "category": "cake", "flavor": "sweet", "servings_per_unit": 1, "tags": ["breakfast"],
@@ -173,3 +174,18 @@ def test_manager_closes_a_slot(app, client):
     assert other and manager.put(f"/api/merchant/slots/{slot['id']}", json={"capacity": 2}).status_code == 200
     foreign = client.get("/api/merchants/copper-kettle/pickup-slots").json()["slots"][0]
     assert manager.put(f"/api/merchant/slots/{foreign['id']}", json={"capacity": 2}).status_code == 404
+
+
+def test_count_is_right_clears_a_stale_count_and_rows_show_todays_sales(client, app, bakery):
+    buy(client, [("CR-01", 2)])
+    staff = member_client(app, shop_id(), "staff")[0]
+    clock.advance(timedelta(hours=5))
+    listing = ok(staff.get("/api/merchant/inventory"))
+    row = next(r for r in listing["rows"] if r["sku"] == "CR-01")
+    assert row["stale"] and row["sold_today"] == 2
+    assert listing["schedule"]["pickup_until_label"]
+    after = ok(staff.post("/api/merchant/inventory", json={"product_id": row["product_id"], "action": "confirm", "expected_version": row["version"]}))["row"]
+    assert not after["stale"] and after["surplus"] == row["surplus"] and after["version"] == row["version"] + 1
+    with transaction() as db:
+        event = db.scalars(select(InventoryEvent).where(InventoryEvent.product_id == row["product_id"]).order_by(InventoryEvent.id.desc())).first()
+        assert event.event_type == "COUNT_CONFIRMED" and event.delta == 0

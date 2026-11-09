@@ -42,7 +42,7 @@ test("the home-page concierge asks how many people when it doesn't know", async 
   await expect(ask.getByRole("article")).toHaveCount(0);
 });
 
-test("the home page leads with Ask LastCall and shows a board of every shop it checked", async ({ page }) => {
+test("the home page leads with Ask LastCall and reads the request back beside how the bundle fits", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "Who are you feeding, and when?" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Ask LastCall", exact: true })).toHaveCount(0); // the page itself is the assistant
@@ -50,17 +50,20 @@ test("the home page leads with Ask LastCall and shows a board of every shop it c
   await ask.getByRole("textbox", { name: "Message the shopping assistant" }).fill("Breakfast for 2 people, my partner has a severe nut allergy");
   await ask.getByRole("button", { name: "Send" }).click();
 
-  const board = page.getByRole("region", { name: "Shop board" });
-  await expect(board.getByText("What I understood · tap to change")).toBeVisible({ timeout: 90_000 });
-  await expect(board.getByText("No tree nuts · strict")).toBeVisible();
-  await expect(board.getByRole("list", { name: "Shops checked" }).getByRole("listitem").first()).toBeVisible();
-  await expect(board.getByRole("article").first()).toContainText("Top pick");
-  await expectAccessible(page, "home concierge board");
+  await expect(ask.getByRole("heading", { name: "You asked for" })).toBeVisible({ timeout: 90_000 });
+  await expect(ask.getByText(/for 2 people, picked up .* with no peanuts or tree nuts\./)).toBeVisible();
+  const card = ask.getByRole("article").first();
+  await expect(card.getByRole("heading", { name: "How it fits" })).toBeVisible();
+  await expect(card.getByRole("rowheader", { name: /^No peanuts or tree nuts/ })).toBeVisible();
+  await expect(card.getByText(/lists every item free of peanuts and tree nuts, with no cross-contact/)).toBeVisible();
+  await expectAccessible(page, "home concierge answer");
 
-  // Changing a chip sends a follow-up; allergies stay locked.
-  await board.getByRole("button", { name: /^2 people/ }).click();
+  // Changing a part of the sentence sends a follow-up; allergies stay locked.
+  await expect(ask.getByRole("button", { name: /no peanuts or tree nuts/i })).toHaveCount(0);
+  await ask.getByRole("button", { name: "2 people, change" }).click();
   await page.getByRole("spinbutton", { name: "How many people?" }).fill("3");
   await page.getByRole("button", { name: "Update" }).click();
+  await ask.getByRole("button", { name: /^Conversation/ }).click();
   await expect(ask.getByText("Make it for 3 people")).toBeVisible();
-  await expect(board.getByRole("button", { name: /No tree nuts/ })).toHaveCount(0);
+  await expect(ask.getByRole("button", { name: "3 people, change" })).toBeVisible({ timeout: 90_000 });
 });

@@ -21,3 +21,8 @@ def today(ctx: StaffContext = Depends(staff_role())) -> dict[str, Any]:
 @router.get("/insights")
 def merchant_insights(period: Literal["today", "7d"] = "today", ctx: StaffContext = Depends(staff_role())) -> dict[str, Any]:
     return insights.latest(ctx.merchant_id, period)
+
+
+@router.get("/insights/summary")
+def merchant_insights_summary(period: Literal["7d", "30d"] = "7d", ctx: StaffContext = Depends(staff_role())) -> dict[str, Any]:
+    return insights.summary(ctx.merchant_id, period)

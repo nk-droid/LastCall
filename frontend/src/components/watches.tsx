@@ -15,14 +15,14 @@ import type { Watch } from "@/lib/types";
 import { useResource } from "@/lib/use-api";
 
 /** Under a concierge reply: save what the shopper asked for as a watch. */
-export function WatchThis({ conversationId, hasCards, variant = "inline" }: { conversationId: string; hasCards: boolean; variant?: "inline" | "bar" }) {
+export function WatchThis({ conversationId, hasCards, variant = "inline" }: { conversationId: string; hasCards: boolean; variant?: "inline" | "bar" | "button" }) {
   const { account } = useAccount();
   const announce = useAnnounce();
   const [saved, setSaved] = useState<Watch | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lead = hasCards ? "Want more like this later?" : "Nothing fits right now.";
-  const pl = variant === "bar" ? 0 : 4.5;
+  const pl = variant === "inline" ? 4.5 : 0;
   if (!account?.user) {
     return (
       <Typography variant="caption" color="text.secondary" sx={{ pl }}>
@@ -53,6 +53,17 @@ export function WatchThis({ conversationId, hasCards, variant = "inline" }: { co
     } finally {
       setBusy(false);
     }
+  }
+  if (variant === "button") {
+    return (
+      <Stack spacing={0.5}>
+        <Button variant="outlined" color="inherit" startIcon={<NotificationsActiveRounded />} loading={busy} onClick={save}
+          sx={{ minHeight: 52, px: 2, borderRadius: "14px", bgcolor: "#fff", borderColor: brand.line, whiteSpace: "nowrap" }}>
+          Watch for this
+        </Button>
+        {error ? <Typography variant="caption" color="error" role="alert">{error}</Typography> : null}
+      </Stack>
+    );
   }
   return (
     <Stack direction="row" spacing={1.25} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap", pl, justifyContent: variant === "bar" ? "space-between" : "flex-start" }}>

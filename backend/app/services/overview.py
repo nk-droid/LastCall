@@ -12,17 +12,19 @@ from sqlalchemy import select
 
 from app import clock
 from app.db import transaction
-from app.models import BundleQuote, Order, SystemState
+from app.models import BundleQuote, Order, Reservation, SystemState
 from app.payments import PayPalNotConfigured, get_client
 from app.payments.payee import display as payee_display
 from app.services import jobs, pickup
 from app.services.access import StaffContext
 from app.services.alerts import open_alerts
 from app.services.catalog import merchant_by_id
-from app.services.fulfillment import order_summary
+from app.services.fulfillment import order_lines, order_summary
 from app.services.inventory import inventory_rows
 
 PENDING = ("APPROVAL_PENDING", "APPROVED", "CAPTURE_REQUESTED", "OUTCOME_UNKNOWN", "CAPTURE_PENDING")
+# In checkout: the hold is placed and the shopper is paying. Shown in the pickup queue as "Paying".
+PAYING = ("RESERVED", *PENDING)
 
 
 def today(ctx: StaffContext) -> dict[str, Any]:
@@ -34,10 +36,26 @@ def today(ctx: StaffContext) -> dict[str, Any]:
         day_start = clock.combine_local(clock.local_date(merchant.timezone), "00:00", merchant.timezone)
         orders = db.scalars(select(Order).where(Order.merchant_id == merchant.id, Order.created_at >= day_start - timedelta(days=1))).all()
         paid = [o for o in orders if o.payment_status == "CAPTURED"]
-        sold_units = 0
+        sold_by_sku: dict[str, int] = {}
+        sales_minor = paid_today = 0
         for o in paid:
             if o.fulfillment_status != "CANCELLED" and o.confirmed_at and o.confirmed_at >= day_start:
-                sold_units += sum(line["qty"] for line in db.get(BundleQuote, o.quote_id).item_lines)
+                for line in db.get(BundleQuote, o.quote_id).item_lines:
+                    sold_by_sku[line["sku"]] = sold_by_sku.get(line["sku"], 0) + line["qty"]
+                sales_minor += o.amount_minor
+                paid_today += 1
+        sold_units = sum(sold_by_sku.values())
+        # The pickup queue: paid orders not yet handed off, plus checkouts still paying (their units are on hold).
+        waiting = [o for o in orders if (o.payment_status == "CAPTURED" and o.fulfillment_status in ("NEW", "PACKING", "READY"))
+                   or o.payment_status in PAYING]
+        open_orders = []
+        for o in sorted(waiting, key=lambda o: (o.pickup_starts_at, o.created_at)):
+            hold = db.get(Reservation, o.reservation_id) if o.payment_status != "CAPTURED" and o.reservation_id else None
+            held = bool(hold and hold.state == "HELD" and hold.expires_at > now)
+            if o.payment_status != "CAPTURED" and not (held or (hold and hold.state == "PAYMENT_IN_FLIGHT")):
+                continue  # the checkout's hold is gone: nothing is waiting on it
+            open_orders.append({**order_summary(db, o, merchant, now), "lines": order_lines(db, o),
+                                "hold_expires_at": clock.iso(hold.expires_at) if held else None})
         today_local = clock.local_date(merchant.timezone).isoformat()
         slots = [s for s in (pickup.slot_view(s, merchant, now) for s in pickup.list_slots(db, merchant, day_start)) if s["date_local"] == today_local]
         connection = db.get(SystemState, "paypal_connection")
@@ -57,9 +75,10 @@ def today(ctx: StaffContext) -> dict[str, Any]:
                 "payment_pending": sum(1 for o in orders if o.payment_status in PENDING),
                 "picked_up_today": sum(1 for o in paid if o.fulfillment_status == "PICKED_UP" and o.picked_up_at and o.picked_up_at >= day_start),
             },
+            "sales": {"amount_minor": sales_minor, "currency": merchant.currency, "paid_orders": paid_today},
             "slots": slots,
-            "top_surplus": sorted(active, key=lambda r: (-r["available"], r["sku"]))[:5],
-            "recent_orders": [order_summary(db, o, merchant, now) for o in sorted(orders, key=lambda o: o.created_at, reverse=True)[:8]],
+            "open_orders": open_orders,
+            "stock": [{**r, "sold_today": sold_by_sku.get(r["sku"], 0)} for r in active],
             "alerts": open_alerts(db, merchant.id),
             "stale_inventory": [{"sku": r["sku"], "name": r["name"], "updated_at": r["updated_at"]} for r in active if r["stale"]],
             "paypal": {"payouts": payee_display(merchant.paypal or {}),

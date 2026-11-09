@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
@@ -18,7 +19,7 @@ from app.db import transaction
 from app.domain import ALLERGENS
 from app.errors import Conflict, NotFound, Unprocessable
 from app.ids import new_id
-from app.models import PRODUCT_CATEGORIES, AuditEvent, InventoryEvent, InventoryLot, Merchant, Price, Product
+from app.models import PRODUCT_CATEGORIES, AuditEvent, BundleQuote, InventoryEvent, InventoryLot, Merchant, Order, Price, Product
 from app.money import format_money
 from app.services import analytics, audit, jobs
 from app.services.access import StaffContext, require_role
@@ -89,9 +90,23 @@ def inventory_rows(db: Session, merchant: Merchant, now: datetime) -> list[dict[
     return rows
 
 
+def sold_today(db: Session, merchant: Merchant, now: datetime) -> dict[str, int]:
+    """Units sold per product today: paid, not cancelled, counted by when payment was confirmed."""
+    day_start = clock.combine_local(clock.local_date(merchant.timezone), "00:00", merchant.timezone)
+    orders = db.scalars(select(Order).where(Order.merchant_id == merchant.id, Order.payment_status == "CAPTURED",
+                                            Order.fulfillment_status != "CANCELLED", Order.confirmed_at >= day_start,
+                                            Order.confirmed_at <= now)).all()
+    quotes = {q.id: q for q in db.scalars(select(BundleQuote).where(BundleQuote.id.in_([o.quote_id for o in orders] or [""]))).all()}
+    sold: dict[str, int] = {}
+    for o in orders:
+        for line in quotes[o.quote_id].item_lines if o.quote_id in quotes else []:
+            sold[line["product_id"]] = sold.get(line["product_id"], 0) + int(line["qty"])
+    return sold
+
+
 class InventoryUpdate(BaseModel):
     product_id: str
-    action: Literal["adjust", "set", "counter_sale", "set_buffer", "set_cutoff", "set_on_hand", "pause", "resume", "archive"]
+    action: Literal["adjust", "set", "counter_sale", "set_buffer", "set_cutoff", "set_on_hand", "pause", "resume", "archive", "confirm"]
     delta: int | None = Field(default=None, ge=-500, le=500)
     value: int | None = Field(default=None, ge=0, le=5000)
     cutoff_local: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
@@ -159,6 +174,9 @@ def update_inventory(user: StaffContext, upd: InventoryUpdate) -> dict[str, Any]
                 raise Unprocessable("cutoff_local is required", code="cutoff_required")
             lot.cutoff_at = clock.combine_local(clock.local_date(merchant.timezone), upd.cutoff_local, merchant.timezone)
             event_type = "CUTOFF_CHANGED"
+        elif upd.action == "confirm":
+            # "Count is right": nothing changes but the time it was last checked, so it stops showing as stale.
+            event_type = "COUNT_CONFIRMED"
         elif upd.action in ("pause", "resume"):
             product.status = "paused" if upd.action == "pause" else "active"
             event_type = "PAUSED" if upd.action == "pause" else "RESUMED"
@@ -381,6 +399,15 @@ def monitor_inventory() -> dict[str, int]:
     return {"alerts": raised}
 
 
+def _since(updated_iso: str, tz: str, now: datetime) -> str:
+    """'9:45 AM' today, else 'Nov 6, 9:45 AM' (in the shop's timezone); never a raw timestamp."""
+    at = datetime.fromisoformat(updated_iso.replace("Z", "+00:00"))
+    label = clock.display_time(at, tz)
+    if at.astimezone(ZoneInfo(tz)).date() == now.astimezone(ZoneInfo(tz)).date():
+        return label
+    return f"{at.astimezone(ZoneInfo(tz)).strftime('%b %-d')}, {label}"
+
+
 def _monitor_merchant(db: Session, merchant: Merchant) -> int:
     raised = 0
     now = clock.now()
@@ -390,7 +417,8 @@ def _monitor_merchant(db: Session, merchant: Merchant) -> int:
             continue
         if row["stale"]:
             raise_alert(db, merchant.id, "stale_inventory", "product", row["product_id"],
-                        f"{row['name']}: stock count not updated since {row['updated_at']}. Confirm it's still accurate.", "medium")
+                        f"{row['name']}: stock count not updated since {_since(row['updated_at'], merchant.timezone, now)}. "
+                        "Confirm it's still accurate.", "medium")
             raised += 1
         if 0 < row["available"] <= low:
             raise_alert(db, merchant.id, "low_stock", "product", row["product_id"], f"{row['name']}: only {row['available']} left", "low")
