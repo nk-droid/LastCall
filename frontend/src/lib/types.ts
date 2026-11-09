@@ -485,6 +485,39 @@ export type OrderDetail = OrderSummary & {
   trace_id: string;
 };
 
+export type InsightsItem = {
+  product_id: string; name: string; image: ImageRef; category: string; relist_daily: boolean;
+  sold: number; listed: number; left: number | null; left_days: number; sold_out_days: number; sold_out_by: string | null; days: number;
+  suggestion: { kind: "more" | "fewer" | "keep" | "early"; label: string };
+};
+
+/** The owner's view of a week or a month (GET /api/merchant/insights/summary). */
+export type InsightsSummary = {
+  period: "7d" | "30d";
+  days: number;
+  start: string;
+  end: string;
+  compare_start: string;
+  compare_end: string;
+  currency: string;
+  headline: {
+    net_sales_minor: number; prev_net_sales_minor: number; prev_daily_average_minor: number; change: number | null;
+    orders: number; average_order_minor: number; refunded_minor: number;
+    menu_value_minor: number; paid_value_minor: number; saved_minor: number; recovered: number | null;
+    sold_units: number; listed_units: number;
+    left_at_close: { units: number; menu_value_minor: number; prev_units: number; closed_days: number } | null;
+  };
+  sales_by_day: { date: string; sales_minor: number; orders: number; today: boolean }[];
+  orders_by_hour: number[];
+  busiest: { start: number; end: number; label: string; share: number } | null;
+  pickup: { slot_fill: number | null; slot_fill_label: string | null; no_shows: number; median_wait_minutes: number | null };
+  items: InsightsItem[];
+  rule: string;
+  missed: { requests: { label: string; count: number }[]; total: number; watching: number; alerts: number; alerts_ordered: number };
+  caution: string | null;
+  computed_at: string;
+};
+
 export type Metric = { value: number | null; numerator?: number; denominator?: number; definition: string };
 
 export type Insights = {
