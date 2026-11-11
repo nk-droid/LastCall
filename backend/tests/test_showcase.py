@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 
+from PIL import Image
 from sqlalchemy import func, select
 
 from app import clock
@@ -84,3 +86,30 @@ def test_manager_publishes_listing_from_the_console(app):
     assert ok(manager.post("/api/merchant/listings/publish"))["relisted"] == 12
     row = next(r for r in ok(manager.get("/api/merchant/inventory"))["rows"] if r["sku"] == "CR-01")
     assert row["relist"] == {"enabled": True, "qty": 8, "cutoff_local": "18:30"}
+
+
+def test_bundled_photos_cover_every_showcase_product_with_a_credit():
+    credits = json.loads((showcase.PHOTOS / "credits.json").read_text())
+    for spec in showcase.SHOWCASE:
+        for item in spec["catalog"]:
+            key = f"{spec['slug']}/{item['sku']}"
+            assert any((showcase.PHOTOS / f"{key}.{ext}").exists() for ext in ("jpg", "png", "webp")), f"no photo for {key}"
+            assert credits[key]["license"] and credits[key]["author"] and credits[key]["url"].startswith("https://"), key
+
+
+def test_seeded_photos_are_attached_once_and_credited(client, tmp_path):
+    for sku in ("CR-01", "BR-02"):
+        (tmp_path / "juniper-rye").mkdir(exist_ok=True)
+        Image.new("RGB", (40, 30), "tan" if sku == "CR-01" else "brown").save(tmp_path / "juniper-rye" / f"{sku}.png")
+    credit = {"source": "Wikimedia Commons", "title": "Croissant.jpg", "author": "A. Baker", "url": "https://commons.wikimedia.org/wiki/File:Croissant.jpg",
+              "license": "CC BY 2.0", "license_url": "https://creativecommons.org/licenses/by/2.0"}
+    (tmp_path / "credits.json").write_text(json.dumps({"juniper-rye/CR-01": credit}))
+
+    assert showcase.seed(photos=tmp_path)["photos"] == 2
+    assert showcase.seed(photos=tmp_path)["photos"] == 0  # products that already have a photo keep it
+
+    photos = ok(client.get("/api/credits"))["photos"]
+    assert len(photos) == 1  # BR-02's photo has no licence to credit
+    assert photos[0]["product"] == "Butter croissant" and photos[0]["shop"]["slug"] == "juniper-rye"
+    assert {k: photos[0][k] for k in credit} == credit
+    assert client.get(photos[0]["image_url"]).status_code == 200

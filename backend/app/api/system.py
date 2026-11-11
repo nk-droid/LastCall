@@ -82,6 +82,13 @@ async def paypal_webhook(request: Request) -> dict[str, Any]:
     return await run_in_threadpool(webhooks.receive, headers, raw)
 
 
+@router.get("/credits")
+def photo_credits() -> dict[str, Any]:
+    """Author, source and licence for every openly licensed photo a live shop shows."""
+    with transaction() as db:
+        return {"photos": media.credits(db)}
+
+
 @router.get("/assets/{asset_id}")
 def asset(asset_id: str, request: Request, size: str = Query(default="full", pattern="^(full|thumb)$")) -> Response:
     """Stored photos. Assets are immutable, so they're cached for a year and revalidated by ETag."""

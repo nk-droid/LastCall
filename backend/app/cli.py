@@ -25,8 +25,9 @@ def main() -> None:
     admin.add_argument("--email", required=True)
     admin.add_argument("--name", default="LastCall Admin")
     seed = sub.add_parser("seed-showcase", help="Create the showcase shops (idempotent); staff accounts need SHOWCASE_PASSWORD")
-    seed.add_argument("--photos", type=Path, help="Folder of <slug>/<SKU>.jpg|png|webp photos (optional credits.json)")
-    seed.add_argument("--pexels", action="store_true", help="Fetch missing photos from Pexels (needs PEXELS_API_KEY)")
+    seed.add_argument("--photos", type=Path, default=showcase.PHOTOS,
+                      help="Folder of <slug>/<SKU>.jpg|png|webp photos with a credits.json (default: the bundled, openly licensed set)")
+    seed.add_argument("--no-photos", dest="photos", action="store_const", const=None, help="Don't attach photos")
     sub.add_parser("run-due", help="Run due background jobs once")
     sub.add_parser("worker", help="Run the background worker in the foreground")
     args = parser.parse_args()
@@ -43,8 +44,7 @@ def main() -> None:
         result = accounts.ensure_platform_admin(email=args.email, name=args.name, password=password)
         print(f"platform admin ready: {result['email']}")
     elif args.command == "seed-showcase":
-        result = showcase.seed(password=os.environ.get("SHOWCASE_PASSWORD"), photos=args.photos,
-                               pexels_key=os.environ.get("PEXELS_API_KEY") if args.pexels else None)
+        result = showcase.seed(password=os.environ.get("SHOWCASE_PASSWORD"), photos=args.photos)
         print(json.dumps(result, indent=2))
     elif args.command == "run-due":
         print(f"ran {jobs.run_due('cli')} job(s)")

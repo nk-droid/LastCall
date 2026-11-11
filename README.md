@@ -134,7 +134,7 @@ Backend tests clone a migrated template database per test, freeze the clock, use
 `render.yaml` defines the web app, the API and PostgreSQL. In Render: **New → Blueprint**, pick this repository, and fill in the prompted values (`PUBLIC_APP_URL`, PayPal credentials, `OLLAMA_API_KEY`). Migrations run as a pre-deploy step; `SECRET_KEY` and `METRICS_TOKEN` are generated. Then, from the API's Shell:
 
 ```bash
-SHOWCASE_PASSWORD=... .venv/bin/python -m app.cli seed-showcase      # add --pexels with PEXELS_API_KEY for product photos
+SHOWCASE_PASSWORD=... .venv/bin/python -m app.cli seed-showcase      # also attaches the bundled product photos to any product without one
 .venv/bin/python -m app.cli create-admin --email you@example.com
 ```
 

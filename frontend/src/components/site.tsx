@@ -1,6 +1,6 @@
 "use client";
 
-import { AddBusinessRounded, CheckRounded, CreditCardOffRounded, PolicyRounded, ReceiptLongRounded, StorefrontRounded } from "@mui/icons-material";
+import { AddBusinessRounded, CheckRounded, CreditCardOffRounded, PhotoCameraRounded, PolicyRounded, ReceiptLongRounded, StorefrontRounded } from "@mui/icons-material";
 import { AppBar, Box, Button, Chip, Container, Divider, IconButton, Link, LinearProgress, Stack, Step, StepLabel, Stepper, Toolbar, Tooltip, Typography, type StepIconProps } from "@mui/material";
 import NextLink from "next/link";
 import type { ReactNode } from "react";
@@ -110,6 +110,10 @@ export function SiteFooter({ shop }: { shop?: ShopContext }) {
           <Link href="/merchant" variant="body2" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
             <StorefrontRounded aria-hidden sx={{ fontSize: 18 }} />
             Merchant console
+          </Link>
+          <Link href="/credits" variant="body2" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+            <PhotoCameraRounded aria-hidden sx={{ fontSize: 18 }} />
+            Photo credits
           </Link>
         </Stack>
       </Container>

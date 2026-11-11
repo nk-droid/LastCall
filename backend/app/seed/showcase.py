@@ -5,20 +5,19 @@ live and verified, with today's surplus listed and its daily listing template sw
 stays stocked. Staff accounts are created only when SHOWCASE_PASSWORD is set; a shop's payout
 account comes from SHOWCASE_PAYEE_<SLUG> (its PayPal Sandbox business account merchant ID).
 
-Photos are optional: a folder of ``<slug>/<SKU>.jpg|png|webp`` files (with a ``credits.json``),
-or the Pexels API (PEXELS_API_KEY), which records the photographer for attribution.
+Photos come from a folder of ``<slug>/<SKU>.jpg|png|webp`` files with a ``credits.json``. The
+bundled set (``PHOTOS``) is openly licensed from Wikimedia Commons; each photo's credit is stored
+with it and listed on the public Photo credits page.
 """
 
 from __future__ import annotations
 
 import json
-import logging
 import os
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -31,9 +30,8 @@ from app.security import hash_password
 from app.seed.catalogs import COPPER_CATALOG, GOLDEN_CATALOG, JUNIPER_CATALOG, NIGHT_OWL_CATALOG
 from app.services import audit, media, pickup, shops
 
-log = logging.getLogger(__name__)
-
 REFERENCE_SOURCE = "Regular menu price for the same item (in-store menu board)"
+PHOTOS = Path(__file__).parent / "photos"
 WEEK = shops.WEEKDAYS
 
 
@@ -167,32 +165,10 @@ def _folder_photos(db: Session, merchant: Merchant, folder: Path) -> int:
     return attached
 
 
-def _pexels_photos(db: Session, merchant: Merchant, api_key: str) -> int:
-    attached = 0
-    with httpx.Client(timeout=20, headers={"Authorization": api_key}) as http:
-        for product in db.scalars(select(Product).where(Product.merchant_id == merchant.id, Product.image_url.is_(None))).all():
-            query = product.name.split("(")[0].strip()
-            try:
-                found = http.get("https://api.pexels.com/v1/search", params={"query": query, "per_page": 1, "orientation": "landscape"}).json()
-                photo = (found.get("photos") or [None])[0]
-                if not photo:
-                    continue
-                raw = http.get(photo["src"]["large"]).content
-            except (httpx.HTTPError, ValueError, KeyError):
-                log.warning("pexels lookup failed", extra={"query": query})
-                continue
-            asset = media.store(db, raw, filename=f"{product.sku}.jpg", merchant_id=None, actor="seed",
-                                attribution={"source": "Pexels", "author": photo.get("photographer"), "url": photo.get("url"),
-                                             "license": "Pexels License"})
-            product.image_url = media.url(asset.id)
-            attached += 1
-    return attached
-
-
 # --------------------------------------------------------------------------- entry point
 
 
-def seed(*, password: str | None = None, photos: Path | None = None, pexels_key: str | None = None) -> dict[str, Any]:
+def seed(*, password: str | None = None, photos: Path | None = None) -> dict[str, Any]:
     """Create any showcase shop that doesn't exist yet; attach photos to products that have none."""
     now = clock.now()
     result: dict[str, Any] = {"created": [], "existing": [], "staff": {}, "photos": 0}
@@ -209,6 +185,4 @@ def seed(*, password: str | None = None, photos: Path | None = None, pexels_key:
                 result["staff"][spec["slug"]] = _create_staff(db, merchant, spec, password)
             if photos:
                 result["photos"] += _folder_photos(db, merchant, photos)
-            if pexels_key:
-                result["photos"] += _pexels_photos(db, merchant, pexels_key)
     return result

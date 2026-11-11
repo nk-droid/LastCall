@@ -5,7 +5,7 @@
 #
 # Values marked `sync: false` are asked for once, when the Blueprint is first created.
 # After the first deploy, seed the showcase shops and an admin from the API's Shell:
-#   .venv/bin/python -m app.cli seed-showcase --pexels   (SHOWCASE_PASSWORD, PEXELS_API_KEY in env)
+#   .venv/bin/python -m app.cli seed-showcase   (SHOWCASE_PASSWORD in env; attaches the bundled product photos)
 #   .venv/bin/python -m app.cli create-admin --email you@example.com
 
 databases:
