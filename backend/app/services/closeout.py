@@ -21,9 +21,11 @@ a simple rules plan (discount slow sellers) is offered instead. Plans expire whe
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
@@ -158,9 +160,10 @@ def generate(merchant_id: str, *, actor: str) -> dict[str, Any]:
     state: dict[str, Any] = {"merchant": merchant, "snapshot": snap}
     result = run_agent(
         kind=KIND, prompt_version=prompts.CLOSEOUT_PROMPT_VERSION, system=prompts.CLOSEOUT_SYSTEM,
-        messages=[{"role": "user", "content": f"Make today's close-out plan for {merchant.name}. Pickup ends at {clock.display_time(end, merchant.timezone)}."}],
-        # Low thinking keeps Run now to about ten seconds; the plan is still checked by code either way.
-        tools=_tools(), subject=("merchant", merchant.id), state=state, timeout=90, turn_timeout=60, think="low",
+        messages=[{"role": "user", "content": _request(merchant, end, state)}],
+        # Today's numbers come with the request, so a plan usually takes one model turn. Low thinking keeps Run now
+        # to a few seconds, and a turn that hangs gives up after 30s so the one retry still fits the budget.
+        tools=_tools(), subject=("merchant", merchant.id), state=state, timeout=90, turn_timeout=30, think="low",
     )
     if result.ok and isinstance(result.final, ProposePlanArgs):
         raw, summary, source = result.final.actions, result.final.summary, "agent"
@@ -190,6 +193,14 @@ def generate(merchant_id: str, *, actor: str) -> dict[str, Any]:
                      meta={"source": source, "agent_run_id": result.run_id, "proposed": len(proposed), "dropped": len(actions) - len(proposed)})
         db.flush()
         return view(merchant, plan)
+
+
+def _request(merchant: Merchant, end: datetime, state: dict[str, Any]) -> str:
+    """The request with today's numbers attached (what get_stock, get_pickup_slots and get_today_sales return)."""
+    view = SimpleNamespace(state=state)
+    data = {"stock": _get_stock(view, NoArgs()), "pickup_slots": _get_slots(view, NoArgs())["slots"], "sales": _get_sales(view, NoArgs())}
+    return (f"Make today's close-out plan for {merchant.name}. Pickup ends at {clock.display_time(end, merchant.timezone)}.\n"
+            f"Today's numbers (current as of now):\n{json.dumps(data, ensure_ascii=False)}")
 
 
 def _tools() -> list[Tool]:

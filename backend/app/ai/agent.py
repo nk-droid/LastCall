@@ -34,6 +34,7 @@ log = logging.getLogger(__name__)
 
 RESULT_CHARS = 6000  # what the model sees of one tool result
 STORED_CHARS = 2000  # what the step log keeps
+RETRY_MIN_SECONDS = 5.0  # a retried turn needs at least this much of the run's time budget left
 
 
 @dataclass
@@ -112,12 +113,14 @@ def run_agent(
     started = time.perf_counter()
     totals = {"in": 0, "out": 0, "steps": 0}
     invalid = 0
+    retried = False  # one retry per run for a slow or briefly unavailable model
 
     def elapsed() -> float:
         return time.perf_counter() - started
 
     try:
-        for _ in range(max_steps):
+        steps = 0
+        while steps < max_steps:
             remaining = budget - elapsed()
             if remaining <= 1:
                 return _end(run_id, "timeout", started, totals, ctx, error="time budget used up")
@@ -126,8 +129,13 @@ def run_agent(
                 turn = provider.chat(convo, specs, min(remaining, turn_timeout), kind, think)
             except ProviderFailure as exc:
                 _invocation(kind, prompt_version, provider, convo, "timeout" if exc.kind == "timeout" else "error", str(exc), turn_started, None, run_id, started)
+                if exc.retryable and not retried and budget - elapsed() >= RETRY_MIN_SECONDS:
+                    retried = True
+                    log.warning("agent turn failed; retrying once", extra={"kind": kind, "run_id": run_id, "reason": exc.kind})
+                    continue
                 status = "timeout" if exc.kind == "timeout" else "error"
                 return _end(run_id, status, started, totals, ctx, error=str(exc))
+            steps += 1
             totals["in"] += turn.input_tokens or 0
             totals["out"] += turn.output_tokens or 0
             calls = turn.tool_calls or _json_tool_calls(turn)

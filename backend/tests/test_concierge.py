@@ -280,3 +280,12 @@ def test_the_agent_knows_the_time_and_is_told_not_to_guess_a_pickup_time(client,
     system = fixture_llm.calls[0]["messages"][0]["content"]
     assert f"it is {clock.display_time(clock.now(), 'America/Los_Angeles')} now" in system
     assert "leave them out unless the shopper gave a pickup time" in system
+
+
+def test_todays_shops_come_with_the_request(client, fixture_llm, night_owl):
+    fixture_llm.queue(TASK, turn(call("find_bundles", shop="juniper-rye", party_size=2), call("find_bundles", shop="night-owl", party_size=2)),
+                      respond_with(2))
+    reply = send(client, "Breakfast for 2 people")["messages"][-1]
+    system = fixture_llm.calls[0]["messages"][0]["content"]
+    assert "Shops today" in system and '"juniper-rye"' in system and '"night-owl"' in system
+    assert reply["source"] == "agent" and len(fixture_llm.calls) == 2  # bundles found in the first turn, answered in the second

@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     paypal_webhook_id: str | None = None
     paypal_timeout_seconds: float = 20.0
     paypal_brand_name: str = "LastCall"
+    # "Connect with PayPal" for shop payouts (Log in with PayPal). Turn on Log in with PayPal in the PayPal app, with the
+    # email and "PayPal account ID (payer ID)" / account verification attributes, and add {PUBLIC_APP_URL}/merchant/paypal/return
+    # as its return URL. When off, owners enter their merchant ID instead.
+    paypal_connect_enabled: bool = False
 
     # LLM adapter. "ollama" calls Ollama through LangChain (ChatOllama): by default Ollama's cloud
     # API, authenticated with OLLAMA_API_KEY. A local daemon works too (OLLAMA_HOST=http://localhost:11434,
@@ -56,9 +60,9 @@ class Settings(BaseSettings):
     llm_think: Literal["low", "medium", "high"] = "low"
     llm_timeout_seconds: float = 20.0
     ai_bundle_rationale: bool = True
-    # Agents (tool-calling loops) use their own model on the same Ollama host and key. On the cloud API
-    # the name has no suffix ("beam"); through a local daemon it is "beam:cloud".
-    agent_model: str = "beam"
+    # Agents (tool-calling loops) can use their own model on the same Ollama host and key (AGENT_MODEL). On the
+    # cloud API the name has no suffix ("gpt-oss:120b"); through a local daemon it is "gpt-oss:120b-cloud".
+    agent_model: str = "gpt-oss:120b"
     agent_max_steps: int = 8
     agent_timeout_seconds: float = 45.0
 

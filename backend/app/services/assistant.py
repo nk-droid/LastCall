@@ -1,4 +1,4 @@
-"""The shop's AI teammates: what the close-out agent, Ask LastCall and Watch alerts did for this shop.
+"""The shop's AI teammates: what the close-out agent, Ask LastCall, Watch alerts and Support replies did for this shop.
 
 One feed for the last week, newest first, plus what shoppers asked for that the shop couldn't offer. Shoppers'
 own words never appear here: Ask LastCall's checks are recorded as structured facts (party size, budget,
@@ -18,7 +18,7 @@ from sqlalchemy import func, or_, select
 from app import clock
 from app.db import transaction
 from app.domain import ALLERGEN_LABELS
-from app.models import AgentProposal, AnalyticsEvent, BundleQuote, Order, Watch, WatchMatch
+from app.models import AgentProposal, AnalyticsEvent, BundleQuote, Order, SupportRequest, Watch, WatchMatch
 from app.money import format_money
 from app.services import closeout
 from app.services.access import StaffContext
@@ -51,6 +51,8 @@ def activity(ctx: StaffContext) -> dict[str, Any]:
         watching = db.scalar(select(func.count()).select_from(Watch).where(
             Watch.status == "active", Watch.expires_at > now, or_(Watch.merchant_id == merchant.id, Watch.merchant_id.is_(None)))) or 0
         outcome = _outcomes(db, events, matches)
+        replies = db.execute(select(SupportRequest, Order.order_number).join(Order, Order.id == SupportRequest.order_id)
+                             .where(Order.merchant_id == merchant.id, SupportRequest.created_at >= since)).all()
 
         suggested = [e for e in events if e.event_name == "concierge_suggested"]
         suggested_convs = {e.properties.get("conversation_id") for e in suggested}
@@ -75,6 +77,14 @@ def activity(ctx: StaffContext) -> dict[str, Any]:
             status = outcome.get(("match", m.id, None)) or ({"tone": "info", "label": "Opened"} if m.opened_at else {"tone": "neutral", "label": "Not opened"})
             feed.append(_item(m.created_at, "watch", "Watch alert sent",
                               f"A shopper watching for {facts or 'deals'} got “{m.label}” for {format_money(m.total_minor, m.currency)}", status, f"watch:{m.id}"))
+        for row, number in replies:
+            if row.ai_draft_source != "agent":
+                continue
+            checks = row.ai_checks or []
+            detail = (f"Checked with PayPal: {' · '.join(c['label'] + ' ' + c['value'].split(' · ')[0].lower() for c in checks)}"
+                      if checks else "Answered from the order details")
+            status = {"tone": "success", "label": "Sent"} if row.status == "replied" else {"tone": "warning", "label": "Waiting for you"}
+            feed.append(_item(row.created_at, "support", f"Drafted a reply for {number}", detail, status, f"support:{row.id}"))
         feed.sort(key=lambda i: i["_at"], reverse=True)
         for item in feed:
             at = item.pop("_at")
@@ -89,6 +99,7 @@ def activity(ctx: StaffContext) -> dict[str, Any]:
         alerts_opened = sum(1 for m, result in zip(matches, alert_outcomes, strict=True) if m.opened_at or result)
         alerts_ordered = sum(1 for result in alert_outcomes if result and result.get("label") == "Ordered")
 
+        drafted = [(r, n) for r, n in replies if r.ai_draft_source == "agent"]
         today_plan = next((p for p in plans if p.subject_date == today.isoformat()), None)
         sched = closeout.schedule(merchant)
         return {
@@ -108,6 +119,9 @@ def activity(ctx: StaffContext) -> dict[str, Any]:
                 },
                 "watch": {"alerts_today": sum(1 for m in matches if m.created_at >= day_start), "alerts_week": len(matches), "watching": watching,
                           "opened_week": alerts_opened, "ordered_week": alerts_ordered},
+                "support": {"drafted_today": sum(1 for r, _ in drafted if r.created_at >= day_start), "drafted_week": len(drafted),
+                            "checked_paypal_week": sum(1 for r, _ in drafted if r.ai_checks), "waiting": sum(1 for r, _ in replies if r.status == "open"),
+                            "sent_as_drafted_week": sum(1 for r, _ in drafted if r.status == "replied" and (r.staff_reply or "").strip() == r.ai_draft.strip())},
             },
             "feed": _per_assistant(feed),
             "gaps": [{"label": label, "count": n} for label, n in gaps.most_common(5)],

@@ -18,6 +18,7 @@ from app.services import (  # noqa: F401 - each module registers its handlers on
     overview,
     pickup,
     refunds,
+    support,
     watches,
     webhooks,
 )

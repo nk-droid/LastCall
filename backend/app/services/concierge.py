@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date, timedelta
+from types import SimpleNamespace
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -137,10 +138,13 @@ def run_turn(conversation_id: str) -> None:
             "conversation_id": conversation_id, "scope": scope_ref, "options": {}, "checked": [], "shops": {}, "merchant_ids": {}, "requests": {}, "board": {}, "understood": {}, "ask": {}, "listed": None,
             "shopper_text": " ".join(m["text"] for m in messages if m["role"] == "user")[-600:],
         }
+        # Today's shops go in with the request, so the model can check them in its first turn instead of asking for the list.
+        shops = None if scope_ref else _list_shops(SimpleNamespace(state=state), ListShopsArgs())["shops"]
         result = run_agent(
-            kind="concierge", prompt_version=prompts.CONCIERGE_PROMPT_VERSION, system=prompts.concierge_system(today, scope_ref, now_label),
+            kind="concierge", prompt_version=prompts.CONCIERGE_PROMPT_VERSION, system=prompts.concierge_system(today, scope_ref, now_label, shops),
             messages=[{"role": m["role"], "content": _history_text(m)} for m in messages[-HISTORY:] if m["role"] in ("user", "assistant")],
             tools=_tools(), session_id=session_id, user_id=user_id, subject=("conversation", conversation_id), state=state,
+            turn_timeout=20,  # a hung turn gives up early enough for the one retry to fit the budget
         )
         reply = _agent_reply(result, state) or _rules_reply(state, session_id)
         reply["run_id"] = result.run_id

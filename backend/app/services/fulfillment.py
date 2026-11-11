@@ -131,7 +131,7 @@ def order_detail(user: StaffContext, order_id: str) -> dict[str, Any]:
             ],
             "support": [
                 {"id": s.id, "topic": s.topic, "message": s.message, "ai_draft": s.ai_draft, "ai_draft_source": s.ai_draft_source,
-                 "status": s.status, "staff_reply": s.staff_reply, "replied_by": s.replied_by, "created_at": clock.iso(s.created_at)}
+                 "ai_checks": s.ai_checks or [], "ai_run_id": s.ai_run_id, "status": s.status, "staff_reply": s.staff_reply, "replied_by": s.replied_by, "created_at": clock.iso(s.created_at)}
                 for s in support
             ],
             "timeline": [{"at": clock.iso(e.timestamp), "action": e.action, "actor": e.actor, "entity": e.entity_type, "meta": e.meta} for e in timeline],

@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import base64
 import json
+from datetime import timedelta
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from sqlalchemy import select
 
+from app import clock
+from app.config import override_settings, settings
 from app.db import transaction
 from app.models import Merchant, PaymentAttempt
 from app.payments.payee import auth_assertion
@@ -42,7 +46,7 @@ def test_auth_assertion_names_our_app_and_the_payee():
 def test_owner_connects_a_verified_payout_account(app, paypal):
     owner = _owner(app)
     view = _connect(owner, "juniperrye001")
-    assert view["payouts"] == {"status": "connected", "display": "JUN…001", "verified_at": view["payouts"]["verified_at"]}
+    assert view["payouts"] == {"status": "connected", "display": "JUN…001", "verified_at": view["payouts"]["verified_at"], "via": "merchant_id", "email": None}
     assert next(i for i in view["checklist"] if i["key"] == "payouts")["done"] is True
     check = next(o for o in paypal.orders.values() if o["purchase_units"][0]["reference_id"] == "payout-check")
     assert check["purchase_units"][0]["payee"] == {"merchant_id": SHOP_PAYEE} and check["status"] == "CREATED"  # never approved or captured
@@ -99,3 +103,63 @@ def test_shop_without_payout_account_is_paid_to_the_platform(client, paypal):
     co, _ = buy(client, [("BR-02", 1)])
     order = paypal.orders[co["paypal_order_id"]]
     assert "payee" not in order["purchase_units"][0]
+
+
+# --------------------------------------------------------------------------- Connect with PayPal
+
+
+@pytest.fixture
+def connect_on():
+    override_settings(**(settings().model_dump() | {"paypal_connect_enabled": True}))
+
+
+def _start(owner) -> str:
+    url = ok(owner.post("/api/merchant/shop/payouts/paypal/start"))["url"]
+    query = parse_qs(urlparse(url).query)
+    assert query["redirect_uri"] == ["http://localhost:3787/merchant/paypal/return"]
+    return query["state"][0]
+
+
+def test_owner_connects_by_signing_in_with_paypal(app, client, paypal, connect_on):
+    assert ok(client.get("/api/config"))["paypal"]["connect"] is True
+    owner = _owner(app)
+    state = _start(owner)
+    view = ok(owner.post("/api/merchant/shop/payouts/paypal/finish", json={"code": paypal.sign_in(SHOP_PAYEE), "state": state}))
+    assert view["payouts"] == {"status": "connected", "display": "JUN…001", "verified_at": view["payouts"]["verified_at"], "via": "paypal", "email": "ow…@juniper-rye.com"}
+    check = next(o for o in paypal.orders.values() if o["purchase_units"][0]["reference_id"] == "payout-check")
+    assert check["purchase_units"][0]["payee"] == {"merchant_id": SHOP_PAYEE}  # still checked as a payee before saving
+    co, _ = buy(client, [("CR-01", 1)])
+    assert paypal.orders[co["paypal_order_id"]]["purchase_units"][0]["payee"] == {"merchant_id": SHOP_PAYEE}  # customers now pay the shop
+
+
+def test_a_sign_in_only_connects_the_shop_and_owner_that_started_it(app, paypal, connect_on):
+    owner = _owner(app)
+    state = _start(owner)
+    other_owner = member_client(app, shop_id(), "owner")[0]
+    stolen = other_owner.post("/api/merchant/shop/payouts/paypal/finish", json={"code": paypal.sign_in(SHOP_PAYEE), "state": state})
+    assert stolen.status_code == 422 and stolen.json()["error"]["code"] == "paypal_connect_invalid"
+    forged = owner.post("/api/merchant/shop/payouts/paypal/finish", json={"code": paypal.sign_in(SHOP_PAYEE), "state": state[:-4] + "abcd"})
+    assert forged.json()["error"]["code"] == "paypal_connect_invalid"
+    clock.advance(timedelta(minutes=11))
+    late = owner.post("/api/merchant/shop/payouts/paypal/finish", json={"code": paypal.sign_in(SHOP_PAYEE), "state": state})
+    assert late.json()["error"]["code"] == "paypal_connect_expired"
+    staff = member_client(app, shop_id(), "manager")[0]
+    assert staff.post("/api/merchant/shop/payouts/paypal/start").status_code == 403
+
+
+def test_unverified_or_rejected_paypal_accounts_are_not_connected(app, paypal, connect_on):
+    owner = _owner(app)
+    unverified = owner.post("/api/merchant/shop/payouts/paypal/finish", json={"code": paypal.sign_in(SHOP_PAYEE, verified=False), "state": _start(owner)})
+    assert unverified.json()["error"]["code"] == "paypal_unverified"
+    reused = owner.post("/api/merchant/shop/payouts/paypal/finish", json={"code": "CODE-NOT-ISSUED", "state": _start(owner)})
+    assert reused.json()["error"]["code"] == "paypal_connect_failed"
+    paypal.invalid_payees.add("BLOCKEDPAYEE1")
+    blocked = owner.post("/api/merchant/shop/payouts/paypal/finish", json={"code": paypal.sign_in("BLOCKEDPAYEE1"), "state": _start(owner)})
+    assert blocked.json()["error"]["code"] == "payee_invalid"
+    assert ok(owner.get("/api/merchant/shop"))["payouts"] == {"status": "not_connected"}
+
+
+def test_connect_with_paypal_is_off_unless_configured(app, client):
+    assert ok(client.get("/api/config"))["paypal"]["connect"] is False
+    off = _owner(app).post("/api/merchant/shop/payouts/paypal/start")
+    assert off.status_code == 422 and off.json()["error"]["code"] == "paypal_connect_off"

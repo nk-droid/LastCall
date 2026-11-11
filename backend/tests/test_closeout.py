@@ -265,3 +265,15 @@ def test_with_the_model_off_the_rules_plan_skips_items_that_are_selling(client, 
     plan = ok(manager.post("/api/merchant/closeout/run"))
     skus = {a["sku"] for a in plan["actions"]}
     assert plan["source"] == "rules" and "BR-02" not in skus and "CC-10" in skus
+
+
+def test_todays_numbers_come_with_the_request_so_one_turn_makes_the_plan(manager, fixture_llm):
+    at(18, 5)
+    fixture_llm.queue(TASK, plan_with(summary="Nothing needs changing."))
+    ok(manager.post("/api/merchant/closeout/run"))
+    request = fixture_llm.calls[0]["messages"][1]["content"]
+    numbers = json.loads(request.split("\n", 2)[2])
+    assert {"stock", "pickup_slots", "sales"} <= set(numbers) and any(p["name"] == "Butter croissant" for p in numbers["stock"]["products"])
+    with transaction() as db:
+        run = db.get(AgentRun, plan_row().run_id)
+        assert (run.status, run.steps) == ("done", 1)  # straight to propose_plan, no data-gathering turn

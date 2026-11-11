@@ -6,6 +6,7 @@
 
 import {
   BlockRounded,
+  LinkRounded,
   LockOpenRounded,
   PauseCircleRounded,
   VerifiedRounded,
@@ -34,6 +35,7 @@ import {
 import { useId, useState, type ReactNode } from "react";
 
 import { useAnnounce } from "@/components/announcer";
+import { useConfig } from "@/components/config";
 import { TimelineToggle, WeekHoursTimeline, type TimelineView } from "@/components/pickup-timeline";
 import { CLOSED_BY_MERCHANT, slotStatus, splitLabel } from "@/components/slot-status";
 import { InfoTip, StatusChip, brand, surface, tones } from "@/components/ui";
@@ -766,6 +768,22 @@ export function PayoutsSection({ settings, draft, setDraft, onSaved, onSettings 
   const connected = p.status === "connected";
   const connect = useInstant(onSettings);
   const [merchantId, setMerchantId] = useState("");
+  const signIn = !!useConfig()?.paypal.connect; // Connect with PayPal (Log in with PayPal) is set up on this server
+  const [manual, setManual] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+
+  async function connectWithPayPal() {
+    setStarting(true);
+    setStartError(null);
+    try {
+      const { url } = await api<{ url: string }>("/api/merchant/shop/payouts/paypal/start", { method: "POST" });
+      window.location.assign(url); // PayPal sends the owner back to /merchant/paypal/return
+    } catch (err) {
+      setStartError(errorMessage(err));
+      setStarting(false);
+    }
+  }
 
   function save() {
     const body: Record<string, unknown> = {};
@@ -784,9 +802,21 @@ export function PayoutsSection({ settings, draft, setDraft, onSaved, onSettings 
         <>
           <Group title="PayPal">
             <Row label="PayPal account"
-              help={owner ? "Your 13-character merchant ID, from Account settings → Business information. We check it with PayPal; no money moves."
-                : "Only the owner can change where payments go."}>
-              {owner ? (
+              help={!owner ? "Only the owner can change where payments go."
+                : signIn && !manual ? "Sign in with PayPal and choose the account customers pay. We check it with PayPal; no money moves."
+                : "Your 13-character merchant ID, from Account settings → Business information. We check it with PayPal; no money moves."}>
+              {connected && p.via === "paypal" && p.email ? (
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Connected by signing in with PayPal · {p.email}</Typography>
+              ) : null}
+              {owner && signIn && !manual ? (
+                <Stack spacing={1} sx={{ alignItems: "flex-start" }}>
+                  <Button variant="contained" startIcon={<LinkRounded />} loading={starting} onClick={connectWithPayPal}>
+                    {connected ? "Switch PayPal account" : "Connect with PayPal"}
+                  </Button>
+                  {startError ? <Typography variant="body2" color="error" role="alert">{startError}</Typography> : null}
+                  <Button size="small" color="inherit" onClick={() => setManual(true)}>Enter a merchant ID instead</Button>
+                </Stack>
+              ) : owner ? (
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "flex-start" } }}>
                   <TextField size="small" value={merchantId} placeholder="Merchant ID" onChange={(e) => setMerchantId(e.target.value.toUpperCase())}
                     error={!!connect.fields.merchant_id} helperText={connect.fields.merchant_id ?? connect.error}

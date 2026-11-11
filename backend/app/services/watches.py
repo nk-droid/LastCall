@@ -336,7 +336,7 @@ def _judge(watch: Watch, candidates: list[_Candidate]) -> tuple[_Candidate | Non
                            for c in candidates],
         }, ensure_ascii=False)}],
         tools=[Tool("notify", "Pick the bundle to email the shopper about, or none.", NotifyArgs, final=True)],
-        user_id=watch.user_id, subject=("watch", watch.id), max_steps=2, timeout=25,
+        user_id=watch.user_id, subject=("watch", watch.id), max_steps=2, timeout=25, turn_timeout=12,  # leaves room for one retry
     )
     if result.ok and isinstance(result.final, NotifyArgs):
         picked = next((c for c in candidates if c.id == result.final.pick), None)

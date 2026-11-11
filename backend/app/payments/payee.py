@@ -40,4 +40,4 @@ def display(paypal: dict[str, Any]) -> dict[str, Any]:
         return {"status": "not_connected"}
     ident = paypal.get("merchant_id") or ""
     return {"status": paypal.get("status", "not_connected"), "display": f"{ident[:3]}…{ident[-3:]}" if len(ident) > 8 else ident,
-            "verified_at": paypal.get("verified_at")}
+            "verified_at": paypal.get("verified_at"), "via": paypal.get("connected_via", "merchant_id"), "email": paypal.get("email")}
