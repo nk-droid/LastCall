@@ -264,14 +264,14 @@ export function BundleChooser({ slug }: { slug: string }) {
         <>
           <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", mb: 3 }}>
             <Typography variant="body2" color="text.secondary">
-              Stock checked {timeLabel(data.inventory_as_of, zone)} · {data.ai.used ? "AI-written explanations, filtered" : "Standard explanations"}
+              Stock checked {timeLabel(data.inventory_as_of, zone)}{data.ai.used ? " · explanations written by AI" : ""}
             </Typography>
             <InfoTip
               label="About these bundles"
               title={
                 data.ai.used
                   ? `Prices, stock and allergen facts come from ${data.merchant.name}'s records. Short explanations are written by AI and filtered so they can't make dietary or price claims.`
-                  : `Prices, stock and allergen facts come from ${data.merchant.name}'s records.${data.ai.fallback_reason ? ` AI explanations unavailable (${data.ai.fallback_reason}).` : ""}`
+                  : `Prices, stock and allergen facts come from ${data.merchant.name}'s records.`
               }
             />
           </Stack>
@@ -485,7 +485,7 @@ function BundleCard({ option, budget, busy, onChoose }: {
                 </Typography>
                 <Typography variant="body2">{option.rationale.text}</Typography>
                 <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.5 }}>
-                  {option.rationale.source === "ai" ? "AI-written, filtered" : "Standard explanation"} · {option.why}
+                  {option.rationale.source === "ai" ? "Written by AI, checked by LastCall · " : ""}{option.why}
                 </Typography>
                 <ScoreBreakdown components={option.score.components} />
               </Box>
