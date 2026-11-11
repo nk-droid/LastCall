@@ -279,8 +279,10 @@ export function Composer({ slug }: { slug: string }) {
   const notes = useMemo(() => (understanding?.fields ?? []).filter((f) => f.status === "note"), [understanding]);
   // One strictness row per allergen group, split into its allergens when they differ
   // (e.g. tree nuts answered as strict while peanuts still need an answer).
+  // An allergen still waiting for its question below isn't offered here as well; answered ones can be changed here.
+  const asked = new Set(clarifications.filter((c) => c.id.startsWith("severity:")).map((c) => c.id.replace("severity:", "")));
   const severityRows = ALLERGEN_CHOICES.flatMap((choice) => {
-    const members = intent?.exclusions.filter((e) => choice.codes.includes(e.code)) ?? [];
+    const members = intent?.exclusions.filter((e) => choice.codes.includes(e.code) && !(e.severity === "needs_confirmation" && asked.has(e.code))) ?? [];
     if (!members.length) return [];
     const whole = members.length === choice.codes.length && members.every((m) => m.severity === members[0].severity);
     return whole
@@ -515,13 +517,13 @@ export function Composer({ slug }: { slug: string }) {
             </Stack>
           </Grid>
 
-          <Grid size={{ xs: 12, md: 5 }}>
+          {/* On a phone, open questions (what brought the shopper here) come before the long form. */}
+          <Grid size={{ xs: 12, md: 5 }} sx={{ order: { xs: clarifications.length ? -1 : 0, md: 0 } }}>
             <Stack spacing={3} sx={{ position: { md: "sticky" }, top: 88 }}>
               <Box aria-busy={parsing || submitting}>
                 <SectionCard
-                  title="Live understanding"
+                  title="What we understood"
                   icon={<PsychologyRounded />}
-                  action={<Chip size="small" variant="outlined" label={submitted?.parser === "ai+rules" ? "AI + rules" : "Rules preview"} />}
                   sx={{ position: "relative", overflow: "hidden" }}
                 >
                   {parsing || submitting ? (
@@ -657,6 +659,7 @@ export function Composer({ slug }: { slug: string }) {
                 ) : null}
               </Box>
 
+              {config?.ai.enabled ? (
               <Card sx={{ ...surface.inset, borderRadius: "18px" }}>
                 <CardContent sx={{ px: 2.5, py: 2, "&:last-child": { pb: 2 } }}>
                   <FormControlLabel
@@ -670,12 +673,11 @@ export function Composer({ slug }: { slug: string }) {
                     sx={{ mr: 0 }}
                   />
                   <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.5, pl: 6.5 }}>
-                    {config?.ai.enabled
-                      ? "Sent to an AI model without emails or phone numbers. The AI can't change prices, stock, allergens or payments."
-                      : "AI is off on this server; standard rules are used."}
+                    Sent to an AI model without emails or phone numbers. It can&apos;t change prices, stock, allergens or payments.
                   </Typography>
                 </CardContent>
               </Card>
+              ) : null}
 
               <Button type="submit" variant="contained" size="large" fullWidth loading={submitting} loadingPosition="start" startIcon={<AutoAwesomeRounded />}>
                 {submitting ? (aiOn ? "Understanding your request…" : "Checking…") : "Find bundles"}

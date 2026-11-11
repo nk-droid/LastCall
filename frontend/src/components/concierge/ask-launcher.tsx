@@ -58,13 +58,3 @@ export function AskProvider({ shop, children }: { shop?: Scope; children: ReactN
     </AskContext.Provider>
   );
 }
-
-/** A shop page's own "let LastCall pick" link, opening the sheet for that shop. */
-export function AskShopButton({ children, sx }: { children: ReactNode; sx?: object }) {
-  const ask = useAsk();
-  return (
-    <Button variant="text" startIcon={<AutoAwesomeRounded />} onClick={() => ask?.open("shop")} aria-haspopup="dialog" sx={sx}>
-      {children}
-    </Button>
-  );
-}
