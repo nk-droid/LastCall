@@ -18,6 +18,7 @@ import {
   SearchRounded,
   ShoppingBagRounded,
   StorefrontRounded,
+  TuneRounded,
   UpdateRounded,
   VerifiedRounded,
 } from "@mui/icons-material";
@@ -40,18 +41,20 @@ import {
   Switch,
   TextField,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
+import type { Theme } from "@mui/material/styles";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 
 import { useAccount } from "@/components/account";
-import { AskShopButton } from "@/components/concierge/ask-launcher";
+import { ProductImage } from "@/components/product-image";
 import { PageShell } from "@/components/site";
 import { EmptyState, ErrorState, FilterChip, InfoList, InfoTip, QuantityStepper, SectionCard, SlowNotice, StatusChip, brand, surface } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { flow } from "@/lib/flow";
 import { ago, money } from "@/lib/format";
-import type { Controls, Exclusion, MerchantPublic, MyOrdersResponse, Slot } from "@/lib/types";
+import type { CatalogItem, Controls, Exclusion, MerchantPublic, MyOrdersResponse, Slot } from "@/lib/types";
 import { useResource } from "@/lib/use-api";
 
 const EXAMPLES = ["Snacks for 4 people under $18, no nuts", "Breakfast for 2, something sweet", "Bread for a dinner for 6"];
@@ -78,6 +81,10 @@ export function Storefront({ slug }: { slug: string }) {
   const mine = useResource((signal) => api<MyOrdersResponse>("/api/me/orders", { signal }), [version]);
   const [text, setText] = useState("");
   const [people, setPeople] = useState(4);
+  const [peopleSet, setPeopleSet] = useState(false); // the typed request decides until the shopper changes it here
+  const phone = useMediaQuery((theme: Theme) => theme.breakpoints.down("sm"), { noSsr: true });
+  const [moreDetails, setMoreDetails] = useState(false);
+  const showDetails = !phone || moreDetails;
   const [useBudget, setUseBudget] = useState(false);
   const [budget, setBudget] = useState(18);
   const [dietary, setDietary] = useState<string[]>([]);
@@ -93,7 +100,7 @@ export function Storefront({ slug }: { slug: string }) {
     const exclusions: Exclusion[] = DIETARY.filter((d) => dietary.includes(d.key)).flatMap((d) => d.codes.map((code) => ({ code, severity: "needs_confirmation" as const })));
     const slot = bookable.find((s) => s.id === slotId);
     const controls: Controls = {
-      party_size: people,
+      party_size: peopleSet ? people : null,
       budget_minor: useBudget ? budget * 100 : null,
       exclusions,
       pickup_window: slot ? [slot.start_local, slot.end_local] : null,
@@ -139,7 +146,7 @@ export function Storefront({ slug }: { slug: string }) {
       ) : null}
 
       <Grid container spacing={{ xs: 3, lg: 5 }}>
-        <Grid size={{ xs: 12, lg: 7 }} component="section" aria-labelledby="hero-title">
+        <Grid size={{ xs: 12, lg: 7 }} component="section" aria-labelledby="hero-title" sx={{ minWidth: 0 }}>
           <Button href="/" size="small" color="inherit" startIcon={<ArrowBackRounded />} sx={{ color: "text.secondary", ml: -1, mb: 1, minHeight: 32 }}>
             All shops
           </Button>
@@ -165,6 +172,7 @@ export function Storefront({ slug }: { slug: string }) {
             </Typography>
           ) : null}
           <PickupStatus merchant={m} loading={merchant.loading} slow={merchant.slow} />
+          {m ? <TodaysSurplus slug={slug} /> : null}
           {merchant.error ? <ErrorState sx={{ mt: 2.5 }} title="Couldn't load this shop" message={errorMessage(merchant.error)} onRetry={merchant.reload} /> : null}
 
           <Card sx={{ mt: 3.5 }}>
@@ -173,8 +181,7 @@ export function Storefront({ slug }: { slug: string }) {
                 <Typography id={`${inputId}-label`} component="label" htmlFor={inputId} variant="h3" sx={{ display: "block", mb: 1.25 }}>
                   What are you shopping for?
                 </Typography>
-                <Stack direction="row" spacing={1}>
-                  <TextField
+                <TextField
                     id={inputId}
                     value={text}
                     onChange={(e) => setText(e.target.value)}
@@ -192,11 +199,6 @@ export function Storefront({ slug }: { slug: string }) {
                       },
                     }}
                   />
-                  {/* On small screens the main button sits below the fold; keep a submit in the first viewport. */}
-                  <Button type="submit" variant="contained" size="large" sx={{ display: { xs: "inline-flex", sm: "none" }, flexShrink: 0 }}>
-                    Build
-                  </Button>
-                </Stack>
                 <Stack direction="row" spacing={1.25} useFlexGap role="group" aria-label="Example requests" sx={{ flexWrap: "wrap", mt: 2 }}>
                   {EXAMPLES.map((example) => (
                     <Chip
@@ -211,15 +213,17 @@ export function Storefront({ slug }: { slug: string }) {
                   ))}
                 </Stack>
 
-                {m ? (
-                  <AskShopButton sx={{ mt: 1.5, ml: -1 }}>Or let LastCall pick for you</AskShopButton>
-                ) : null}
+                {showDetails ? <Divider sx={{ my: 3.5 }} /> : (
+                  <Button type="button" color="inherit" startIcon={<TuneRounded />} onClick={() => setMoreDetails(true)} sx={{ mt: 1.5, ml: -1 }}>
+                    Add people, budget or allergies
+                  </Button>
+                )}
 
-                <Divider sx={{ my: 3.5 }} />
-
+                {showDetails ? (
                 <Grid container spacing={3}>
                   <Grid size={{ xs: 12, sm: 5 }}>
-                    <QuantityStepper label="People" value={people} onChange={setPeople} min={1} max={40} />
+                    <QuantityStepper label="People" value={people} onChange={(v) => { setPeople(v); setPeopleSet(true); }} min={1} max={40}
+                      hint={peopleSet ? undefined : "Or say it in your request"} />
                   </Grid>
                   <Grid size={{ xs: 12, sm: 7 }}>
                     <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", mb: 0.25 }}>
@@ -291,8 +295,9 @@ export function Storefront({ slug }: { slug: string }) {
                     </TextField>
                   </Grid>
                 </Grid>
+                ) : null}
 
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mt: 3.5 }}>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mt: showDetails ? 3.5 : 2.5 }}>
                   <Button type="submit" variant="contained" size="large" startIcon={<AutoAwesomeRounded />} sx={{ flex: { sm: 1 } }}>
                     Build my bundle
                   </Button>
@@ -466,5 +471,58 @@ function MerchantTrust({ merchant, slug }: { merchant: MerchantPublic | null; sl
         </Link>
       </Stack>
     </SectionCard>
+  );
+}
+
+/** Today's surplus as photos, so a shop's page leads with its food. Each card opens the full list, where items go in a basket. */
+function TodaysSurplus({ slug }: { slug: string }) {
+  const headingId = useId();
+  const catalog = useResource((signal) => api<{ items: CatalogItem[] }>(`/api/merchants/${slug}/catalog`, { signal }), [slug], { pollMs: 60_000 });
+  const items = (catalog.data?.items ?? [])
+    .filter((i) => i.availability.status === "available" || i.availability.status === "low")
+    .sort((a, b) => b.price.discount_pct - a.price.discount_pct);
+  if (catalog.error || (catalog.data && !items.length)) return null; // the pickup status above already says why
+  return (
+    <Box component="section" aria-labelledby={headingId} sx={{ mt: 3, minWidth: 0, maxWidth: "100%" }}>
+      <Stack direction="row" sx={{ alignItems: "baseline", justifyContent: "space-between", mb: 1.25 }}>
+        <Typography id={headingId} variant="h4" component="h2">Today&apos;s surplus</Typography>
+        {items.length ? (
+          <Link href={`/shops/${slug}/browse`} variant="body2" sx={{ fontWeight: 650, display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+            See all {items.length} <ArrowForwardRounded aria-hidden sx={{ fontSize: 16 }} />
+          </Link>
+        ) : null}
+      </Stack>
+      {/* position: relative keeps the visually hidden price labels inside the scrolling row (they would widen the page). */}
+      <Box component="ul" sx={{ position: "relative", listStyle: "none", m: 0, p: 0, pb: 1, display: "flex", gap: 1.5, overflowX: "auto", scrollSnapType: "x mandatory",
+        mx: { xs: -2, sm: 0 }, px: { xs: 2, sm: 0 }, scrollPaddingInline: { xs: 16, sm: 0 } }}>
+        {catalog.data ? items.slice(0, 8).map((i) => (
+          <Box component="li" key={i.product_id} sx={{ flex: "0 0 148px", scrollSnapAlign: "start" }}>
+            <Link href={`/shops/${slug}/browse`} underline="none" color="inherit" sx={{ display: "block", borderRadius: "12px" }}>
+              <ProductImage image={i.image} size="sm" sx={{ width: 148, height: 111 }} />
+              <Typography variant="body2" sx={{ fontWeight: 650, mt: 0.75, lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                {i.name}
+              </Typography>
+              <Typography variant="body2" className="tabular">
+                <Box component="span" sx={{ fontWeight: 750 }}>{money(i.price.sale_minor, i.price.currency)}</Box>{" "}
+                {i.price.discount_pct > 0 ? (
+                  <Box component="span" sx={{ color: "text.secondary", textDecoration: "line-through" }}>
+                    <span className="sr-only">regular price </span>{money(i.price.reference_minor, i.price.currency)}
+                  </Box>
+                ) : null}
+              </Typography>
+              <Typography variant="caption" color={i.availability.status === "low" ? "warning.main" : "text.secondary"} sx={{ fontWeight: i.availability.status === "low" ? 650 : 400 }}>
+                {i.availability.status === "low" ? `Only ${i.availability.available} left` : `${i.availability.available} left`}
+              </Typography>
+            </Link>
+          </Box>
+        )) : [0, 1, 2, 3].map((k) => (
+          <Box component="li" key={k} sx={{ flex: "0 0 148px" }} aria-hidden>
+            <Skeleton variant="rounded" width={148} height={111} sx={{ borderRadius: "10px" }} />
+            <Skeleton width="85%" />
+            <Skeleton width="50%" />
+          </Box>
+        ))}
+      </Box>
+    </Box>
   );
 }

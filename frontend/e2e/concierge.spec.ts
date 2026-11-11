@@ -7,8 +7,9 @@ import { HOME_ASK, SHOP, expectAccessible } from "./helpers";
 // cross-contact), and holding the bundle is the shopper's click into the normal review page.
 test("the shop-page concierge respects a nut allergy and hands off to review", async ({ page }) => {
   await page.goto(`/shops/${SHOP.slug}`);
-  await expect(page.getByRole("button", { name: "Ask LastCall", exact: true })).toBeVisible(); // on every shopping page
-  await page.getByRole("button", { name: "Or let LastCall pick for you" }).click();
+  const ask = page.getByRole("button", { name: "Ask LastCall", exact: true }); // on every shopping page, scoped to the shop here
+  await expect(ask).toBeVisible();
+  await ask.click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("textbox", { name: "Message the shopping assistant" }).fill("Breakfast for 2 people, my partner has a severe nut allergy");
   await dialog.getByRole("button", { name: "Send" }).click();
