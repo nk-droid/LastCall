@@ -92,7 +92,7 @@ def order_fee(db: Session, order: Order) -> dict[str, Any] | None:
         return None
     refunded = db.scalar(select(func.coalesce(func.sum(Refund.amount_minor), 0)).where(Refund.order_id == order.id, Refund.state == "COMPLETED")) or 0
     return {"fee_minor": fee.fee_minor, "net_minor": order.amount_minor - refunded - fee.fee_minor, "currency": fee.currency,
-            "label": _terms_label(fee.rate_bps, fee.min_minor, fee.currency), "billed": fee.billed_minor == fee.fee_minor and fee.billed_minor > 0}
+            "label": _terms_label(fee.rate_bps, fee.min_minor, fee.currency), "billed": fee.billed_minor > 0}
 
 
 # --------------------------------------------------------------------------- weekly invoices
