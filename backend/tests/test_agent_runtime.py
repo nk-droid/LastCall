@@ -212,15 +212,15 @@ def test_the_ollama_adapter_sends_tools_and_reads_native_tool_calls():
     def handler(request: httpx.Request) -> httpx.Response:
         seen.update(json.loads(request.content))
         return httpx.Response(200, json={
-            "model": "beam", "created_at": "2026-11-07T10:00:00Z", "done": True, "done_reason": "stop",
+            "model": "gpt-oss:120b", "created_at": "2026-11-07T10:00:00Z", "done": True, "done_reason": "stop",
             "message": {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "add", "arguments": {"a": 2, "b": 3}}}]},
             "prompt_eval_count": 50, "eval_count": 9,
         })
 
-    beam = OllamaProvider("https://ollama.com", "beam", "low", "test-key", client_kwargs={"transport": httpx.MockTransport(handler)})
-    turn = beam.chat([{"role": "system", "content": "Add."}, {"role": "user", "content": "2+3"}], [t.spec() for t in _tools()], 10, TASK)
+    provider = OllamaProvider("https://ollama.com", "gpt-oss:120b", "low", "test-key", client_kwargs={"transport": httpx.MockTransport(handler)})
+    turn = provider.chat([{"role": "system", "content": "Add."}, {"role": "user", "content": "2+3"}], [t.spec() for t in _tools()], 10, TASK)
 
-    assert seen["model"] == "beam"
+    assert seen["model"] == "gpt-oss:120b"
     assert [t["function"]["name"] for t in seen["tools"]] == ["add", "answer"]
     assert seen["tools"][0]["function"]["parameters"]["required"] == ["a", "b"]
     assert [(c.name, c.args) for c in turn.tool_calls] == [("add", {"a": 2, "b": 3})]
@@ -232,14 +232,14 @@ def test_the_ollama_adapter_can_lower_the_thinking_level_per_call():
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(json.loads(request.content))
-        return httpx.Response(200, json={"model": "beam", "created_at": "2026-11-07T10:00:00Z", "done": True, "done_reason": "stop",
+        return httpx.Response(200, json={"model": "gpt-oss:120b", "created_at": "2026-11-07T10:00:00Z", "done": True, "done_reason": "stop",
                                          "message": {"role": "assistant", "content": "ok"}})
 
-    beam = OllamaProvider("https://ollama.com", "beam", "low", "test-key", client_kwargs={"transport": httpx.MockTransport(handler)})
+    provider = OllamaProvider("https://ollama.com", "gpt-oss:120b", "low", "test-key", client_kwargs={"transport": httpx.MockTransport(handler)})
     messages = [{"role": "user", "content": "hi"}]
-    beam.chat(messages, [t.spec() for t in _tools()], 10, TASK, think="low")
-    beam.chat(messages, [t.spec() for t in _tools()], 10, TASK)
-    assert seen[0].get("think") == "low" and "think" not in seen[1]
+    provider.chat(messages, [t.spec() for t in _tools()], 10, TASK, think="high")
+    provider.chat(messages, [t.spec() for t in _tools()], 10, TASK)
+    assert seen[0].get("think") == "high" and seen[1].get("think") == "low"  # gpt-oss always gets a level: the call's, else LLM_THINK
 
 
 def test_ops_lists_agent_runs_with_their_steps(fixture_llm, app):

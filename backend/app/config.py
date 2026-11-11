@@ -60,9 +60,9 @@ class Settings(BaseSettings):
     llm_think: Literal["low", "medium", "high"] = "low"
     llm_timeout_seconds: float = 20.0
     ai_bundle_rationale: bool = True
-    # Agents (tool-calling loops) use their own model on the same Ollama host and key. On the cloud API
-    # the name has no suffix ("beam"); through a local daemon it is "beam:cloud".
-    agent_model: str = "beam"
+    # Agents (tool-calling loops) can use their own model on the same Ollama host and key (AGENT_MODEL). On the
+    # cloud API the name has no suffix ("gpt-oss:120b"); through a local daemon it is "gpt-oss:120b-cloud".
+    agent_model: str = "gpt-oss:120b"
     agent_max_steps: int = 8
     agent_timeout_seconds: float = 45.0
 

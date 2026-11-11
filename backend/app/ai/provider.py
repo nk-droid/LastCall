@@ -235,7 +235,7 @@ def get_provider() -> LLMProvider | None:
 
 
 def get_agent_provider() -> LLMProvider | None:
-    """The model that drives agents (``AGENT_MODEL``, default "beam"), on the same host and key as everything else."""
+    """The model that drives agents (``AGENT_MODEL``, default gpt-oss:120b), on the same host and key as everything else."""
     if "p" in _provider_override:
         return _provider_override["p"]
     s = settings()
