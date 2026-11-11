@@ -38,7 +38,8 @@ from app.services.catalog import get_merchant, list_merchants, policy
 
 log = logging.getLogger(__name__)
 
-MAX_SHOPS = 4
+MAX_SHOPS = 8
+OPTIONS_PER_SHOP = 2  # what find_bundles_everywhere shows the model per shop (every option stays pickable)
 MAX_CARDS = 3
 HISTORY = 12
 STALE_AFTER = timedelta(seconds=120)
@@ -52,8 +53,7 @@ class ListShopsArgs(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-class FindBundlesArgs(BaseModel):
-    shop: str = Field(min_length=1, max_length=80, description="Shop slug from list_shops")
+class SearchArgs(BaseModel):
     party_size: int = Field(ge=1, le=40, description="How many people the food is for")
     budget_dollars: float | None = Field(default=None, ge=1, le=1000, description="Maximum spend in dollars, if the shopper gave one")
     allergens: list[AllergenCode] = Field(default_factory=list, description="Allergens to avoid")
@@ -65,9 +65,13 @@ class FindBundlesArgs(BaseModel):
     pickup_before: str | None = Field(default=None, pattern=HHMM, description="Latest pickup, 24-hour HH:MM")
 
 
+class FindBundlesArgs(SearchArgs):
+    shop: str = Field(min_length=1, max_length=80, description="Shop slug from list_shops")
+
+
 class RespondArgs(BaseModel):
     message: str = Field(default="", max_length=600, description="At most two short sentences on why the options fit")
-    option_ids: list[str] = Field(default_factory=list, max_length=MAX_CARDS, description="Best first; ids from find_bundles")
+    option_ids: list[str] = Field(default_factory=list, max_length=MAX_CARDS, description="Best first; ids from find_bundles_everywhere or find_bundles")
     questions: list[str] = Field(default_factory=list, max_length=2, description="Only when something essential is missing")
 
 
@@ -167,6 +171,9 @@ def run_turn(conversation_id: str) -> None:
 def _tools() -> list[Tool]:
     return [
         Tool("list_shops", "List LastCall shops with their pickup state today and how many surplus items they have.", ListShopsArgs, _list_shops),
+        Tool("find_bundles_everywhere", "Find bundles that fit the request at every shop open today, in one call: each shop's best "
+             f"options (up to {OPTIONS_PER_SHOP}). Code checks stock, allergens, budget and pickup time; every option returned already "
+             "passed those checks.", SearchArgs, _find_everywhere),
         Tool("find_bundles", "Find bundles at one shop that fit the request. Code checks stock, allergens, budget and pickup time; "
              "every option returned already passed those checks.", FindBundlesArgs, _find_bundles),
         Tool("respond", "Reply to the shopper with up to 3 options (best first) and/or a question. Ends your turn.", RespondArgs, final=True),
@@ -198,6 +205,34 @@ def _find_bundles(ctx, args: FindBundlesArgs) -> dict[str, Any]:
     if args.shop not in checked and len(checked) >= MAX_SHOPS:
         raise ToolError(f"You have already checked {MAX_SHOPS} shops; choose from those options.")
     return _search(ctx.state, ctx.session_id, args.shop, args)
+
+
+def _open_shops() -> list[str]:
+    """Slugs of the listed shops taking pickups today with surplus left, at most MAX_SHOPS."""
+    with transaction() as db:
+        now = clock.now()
+        cards = [merchant_card(db, m, now) for m in _listed(db, None)]
+    return [c["slug"] for c in cards if c["pickup"]["state"] == "open" and c["surplus"]["items_available"]][:MAX_SHOPS]
+
+
+def _find_everywhere(ctx, args: SearchArgs) -> dict[str, Any]:
+    """The same search as find_bundles, run at every open shop, so a comparison never depends on which shops the model picks."""
+    scope = ctx.state["scope"]
+    if scope:
+        raise ToolError(f"This chat is only for {scope[1]}; use find_bundles with shop {scope[0]!r}.")
+    shops = []
+    for slug in _open_shops():
+        try:
+            result = _search(ctx.state, ctx.session_id, slug, FindBundlesArgs(shop=slug, **args.model_dump()))
+        except ToolError as exc:
+            if "How many people" in str(exc):
+                raise
+            shops.append({"shop": ctx.state["shops"].get(slug, slug), "error": str(exc)})
+            continue
+        shops.append({**result, "options": result["options"][:OPTIONS_PER_SHOP]})
+    if not shops:
+        return {"shops": [], "note": "No shop is taking pickups today."}
+    return {"shops": shops}
 
 
 def _search(state: dict[str, Any], session_id: str, slug: str, args: FindBundlesArgs | None) -> dict[str, Any]:
@@ -562,10 +597,7 @@ def _rules_reply(state: dict[str, Any], session_id: str) -> dict[str, Any]:
     if state["scope"]:
         slugs = [state["scope"][0]]
     else:
-        with transaction() as db:
-            now = clock.now()
-            cards = [merchant_card(db, m, now) for m in _listed(db, None)]
-        slugs = [c["slug"] for c in cards if c["pickup"]["state"] == "open" and c["surplus"]["items_available"]][:MAX_SHOPS]
+        slugs = _open_shops()
     for slug in slugs:
         try:
             _search(state, session_id, slug, None)

@@ -117,6 +117,38 @@ def test_compares_shops_and_applies_every_allergen_the_shopper_typed(client, fix
     assert (run.kind, run.status, run.steps) == ("concierge", "done", 4)
 
 
+def first_option_per_shop(n: int = 3, message: str = "Two good spreads for four."):
+    """A scripted final turn that picks each shop's best option from find_bundles_everywhere."""
+
+    def reply(messages: list[dict]) -> dict:
+        picks = [shop["options"][0]["option_id"] for r in tool_results(messages) for shop in r.get("shops", []) if shop.get("options")]
+        return turn(call("respond", message=message, option_ids=picks[:n]))
+
+    return reply
+
+
+def test_the_home_chat_checks_every_open_shop_in_one_call(client, fixture_llm, night_owl):
+    fixture_llm.queue(TASK, turn(call("find_bundles_everywhere", party_size=4)), first_option_per_shop())
+    convo = send(client, "Snacks for 4 people, my son has a nut allergy")
+
+    checked = tool_results(fixture_llm.calls[-1]["messages"])[0]["shops"]
+    assert {s["shop"] for s in checked} == {"Juniper & Rye Bakehouse", "Night Owl Doughnuts"}
+    assert all(0 < len(s["options"]) <= 2 for s in checked)
+    assert nut_items_offered(fixture_llm.calls[-1]["messages"]) == []  # code applied the allergy the model left out
+    reply = convo["messages"][-1]
+    assert reply["source"] == "agent" and {c["shop"]["slug"] for c in reply["cards"]} == {"juniper-rye", "night-owl"}
+    assert_no_nuts(reply["cards"])
+    assert convo["progress"] == ["Looking at today's shops", "Checking Juniper & Rye Bakehouse", "Checking Night Owl Doughnuts"]
+
+
+def test_a_shop_page_chat_cannot_search_every_shop(client, fixture_llm, night_owl):
+    fixture_llm.queue(TASK, turn(call("find_bundles_everywhere", party_size=2)), turn(call("find_bundles", shop="night-owl", party_size=2)),
+                      respond_with(1))
+    reply = send(client, "Breakfast for 2 people", shop="night-owl")["messages"][-1]
+    assert "only for Night Owl Doughnuts" in tool_results(fixture_llm.calls[1]["messages"])[0]["error"]
+    assert {c["shop"]["slug"] for c in reply["cards"]} == {"night-owl"}
+
+
 def test_without_an_allergy_nut_items_are_offered(client, fixture_llm):
     """Control for the test above: the same request without the allergy does surface nut items."""
     fixture_llm.queue(TASK, turn(call("find_bundles", shop="juniper-rye", party_size=6, budget_dollars=25)), respond_with(3))
@@ -140,7 +172,7 @@ def test_holding_stock_stays_the_shoppers_click_and_matches_the_manual_path(clie
     fixture_llm.queue(TASK, turn(call("find_bundles", shop="juniper-rye", party_size=4)), respond_with(1))
     convo = send(client, "Something sweet for 4 people")
     card = convo["messages"][-1]["cards"][0]
-    assert {t for c in fixture_llm.calls for t in c["tools"]} == {"list_shops", "find_bundles", "respond"}
+    assert {t for c in fixture_llm.calls for t in c["tools"]} == {"list_shops", "find_bundles_everywhere", "find_bundles", "respond"}
     with transaction() as db:
         assert db.scalars(select(Reservation)).first() is None  # the agent held nothing
 
