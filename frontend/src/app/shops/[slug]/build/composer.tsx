@@ -43,7 +43,7 @@ import { FilterChip, PageHeader, QuantityStepper, SectionCard, StatusChip, brand
 import { api, errorMessage } from "@/lib/api";
 import { flow, useFlowSnapshot } from "@/lib/flow";
 import { money } from "@/lib/format";
-import type { Controls, Exclusion, MerchantPublic, ParseField, ParseResponse, Severity, Slot } from "@/lib/types";
+import type { Clarification, Controls, Exclusion, MerchantPublic, ParseField, ParseResponse, Severity, Slot } from "@/lib/types";
 import { useResource } from "@/lib/use-api";
 
 const PROMPTS = [
@@ -148,6 +148,8 @@ export function Composer({ slug }: { slug: string }) {
   const [useAi, setUseAi] = useState(true);
   const [live, setLive] = useState<ParseResponse | null>(null);
   const [submitted, setSubmitted] = useState<ParseResponse | null>(null);
+  // Questions from the last "Find bundles", kept apart so answering one leaves the others open.
+  const [questions, setQuestions] = useState<Clarification[]>([]);
   const [parsing, setParsing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -203,6 +205,7 @@ export function Composer({ slug }: { slug: string }) {
         body: { text, controls: nextControls, use_ai: useAi && !!config?.ai.enabled, persist: true, merchant: slug },
       });
       setSubmitted(result);
+      setQuestions(result.clarifications ?? []);
       if (result.state === "ready" && result.intent_id) {
         flow.set({ merchant: slug, intentId: result.intent_id, controls: nextControls, text });
         announce("Request understood. Finding bundles.");
@@ -235,7 +238,7 @@ export function Composer({ slug }: { slug: string }) {
   }, [hydrated, params, config]);
 
   function setExclusion(codes: string[], on: boolean, severity: Severity = "strict") {
-    setSubmitted(null);
+    resolve((c) => codes.includes(c.id.replace("severity:", "")));
     setControls((cur) => {
       const existing = (cur.exclusions ?? []).filter((e) => !codes.includes(e.code));
       const removed = new Set(cur.removed_exclusions ?? []);
@@ -245,20 +248,23 @@ export function Composer({ slug }: { slug: string }) {
   }
 
   function answer(question: string, value: string) {
-    // One answer covers the whole group the customer thinks in ("nuts" = tree nuts + peanuts).
+    // Each question answers only its own allergen (tree nuts and peanuts are asked separately).
     const code = question.replace("severity:", "");
-    const group = ALLERGEN_CHOICES.find((g) => g.codes.includes(code));
-    const present = group?.codes.filter((c) => intent?.exclusions.some((e) => e.code === c)) ?? [];
-    const codes = present.length ? present : [code];
-    const next: Controls = {
-      ...controls,
-      exclusions: [...(controls.exclusions ?? []).filter((e) => !codes.includes(e.code)), ...codes.map((c) => ({ code: c, severity: value as Severity }))],
-    };
-    setControls(next);
-    const remaining = (submitted?.clarifications ?? []).filter((c) => c.id.startsWith("severity:") && !codes.includes(c.id.replace("severity:", "")));
-    const partyMissing = (submitted?.clarifications ?? []).some((c) => c.id === "party_size");
-    if (!remaining.length && !partyMissing) void submit(next);
-    else setSubmitted((s) => (s ? { ...s, clarifications: s.clarifications.filter((c) => !codes.includes(c.id.replace("severity:", ""))) } : s));
+    setExclusion([code], true, value as Severity);
+    announce(`${capitalize(code.replace(/_/g, " "))} saved as ${value === "strict" ? "a strict allergy" : "a preference"}.`);
+  }
+
+  /** A changed request: its questions no longer apply. */
+  function invalidate() {
+    setSubmitted(null);
+    setQuestions([]);
+  }
+
+  /** Close the answered questions and keep the rest; only "Find bundles" moves on. The summary
+   *  switches to the live parse, which reflects the new answer. */
+  function resolve(answered: (c: Clarification) => boolean) {
+    setQuestions((q) => q.filter((c) => !answered(c)));
+    setSubmitted(null);
   }
 
   const effectiveParty = controls.party_size ?? intent?.party_size ?? null;
@@ -266,12 +272,21 @@ export function Composer({ slug }: { slug: string }) {
   const slotKey = controls.pickup_window ? `${controls.pickup_date ?? ""}|${controls.pickup_window[0]}|${controls.pickup_window[1]}` : "any";
   const errors = (understanding?.warnings ?? []).filter((w) => w.level === "error");
   const infos = (understanding?.warnings ?? []).filter((w) => w.level === "info");
-  const clarifications = submitted?.clarifications ?? [];
+  const clarifications = questions;
   const aiOn = useAi && !!config?.ai.enabled;
 
   const summaryFields = useMemo(() => (understanding?.fields ?? []).filter((f) => f.status !== "note"), [understanding]);
   const notes = useMemo(() => (understanding?.fields ?? []).filter((f) => f.status === "note"), [understanding]);
-  const activeAllergens = ALLERGEN_CHOICES.map((choice) => ({ choice, active: exclusionState(choice.codes) })).filter((a) => !!a.active);
+  // One strictness row per allergen group, split into its allergens when they differ
+  // (e.g. tree nuts answered as strict while peanuts still need an answer).
+  const severityRows = ALLERGEN_CHOICES.flatMap((choice) => {
+    const members = intent?.exclusions.filter((e) => choice.codes.includes(e.code)) ?? [];
+    if (!members.length) return [];
+    const whole = members.length === choice.codes.length && members.every((m) => m.severity === members[0].severity);
+    return whole
+      ? [{ key: choice.key, label: choice.label, codes: choice.codes, severity: members[0].severity }]
+      : members.map((m) => ({ key: m.code, label: capitalize(m.code.replace(/_/g, " ")), codes: [m.code], severity: m.severity }));
+  });
 
   return (
     <PageShell shop={shop.data ? { slug, name: shop.data.name } : undefined}>
@@ -294,7 +309,7 @@ export function Composer({ slug }: { slug: string }) {
                   minRows={3}
                   fullWidth
                   value={text}
-                  onChange={(e) => { setText(e.target.value); setSubmitted(null); }}
+                  onChange={(e) => { setText(e.target.value); invalidate(); }}
                   onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
                     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                       e.preventDefault();
@@ -313,7 +328,7 @@ export function Composer({ slug }: { slug: string }) {
                       type="button"
                       clickable
                       label={p}
-                      onClick={() => { setText(p); setSubmitted(null); }}
+                      onClick={() => { setText(p); invalidate(); }}
                       sx={{ ...surface.raisedSm, color: brand.forest, fontWeight: 550, height: "auto", minHeight: 32, py: 0.5, "& .MuiChip-label": { whiteSpace: "normal" }, "&:hover": { bgcolor: "#ECF1EE !important" } }}
                     />
                   ))}
@@ -329,7 +344,7 @@ export function Composer({ slug }: { slug: string }) {
                       min={1}
                       max={40}
                       hint={controls.party_size ? "Set by you" : effectiveParty ? "From your words" : "Not set yet"}
-                      onChange={(v) => { setSubmitted(null); setControls((c) => ({ ...c, party_size: v })); }}
+                      onChange={(v) => { invalidate(); setControls((c) => ({ ...c, party_size: v })); }}
                     />
                   </Grid>
                   <Grid size={{ xs: 12, sm: 6 }}>
@@ -340,7 +355,7 @@ export function Composer({ slug }: { slug: string }) {
                       value={controls.budget_minor != null ? controls.budget_minor / 100 : ""}
                       placeholder={intent?.budget_minor ? String(intent.budget_minor / 100) : "No limit"}
                       onChange={(e) => {
-                        setSubmitted(null);
+                        invalidate();
                         const v = e.target.value;
                         setControls((c) => ({ ...c, budget_minor: v === "" ? null : Math.round(Number(v) * 100) }));
                       }}
@@ -375,28 +390,28 @@ export function Composer({ slug }: { slug: string }) {
                           );
                         })}
                       </Stack>
-                      {activeAllergens.length ? (
+                      {severityRows.length ? (
                         <Stack spacing={1} sx={{ mt: 1.5 }}>
-                          {activeAllergens.map(({ choice, active }) => (
+                          {severityRows.map((row) => (
                             <Stack
-                              key={choice.key}
+                              key={row.key}
                               direction="row"
                               spacing={1}
                               useFlexGap
                               sx={{ ...surface.inset, alignItems: "center", flexWrap: "wrap", justifyContent: "space-between", borderRadius: "16px", px: 2, py: 1.25 }}
                             >
                               <Typography variant="body2" sx={{ fontWeight: 650 }}>
-                                No {choice.label.toLowerCase()}
+                                No {row.label.toLowerCase()}
                               </Typography>
                               <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                                {active?.severity === "needs_confirmation" ? <StatusChip tone="warning" label="Choose one" /> : null}
+                                {row.severity === "needs_confirmation" ? <StatusChip tone="warning" label="Choose one" /> : null}
                                 <ToggleButtonGroup
                                   exclusive
                                   size="small"
-                                  aria-label={`How strict for ${choice.label}`}
-                                  value={active?.severity === "needs_confirmation" ? null : active?.severity ?? null}
+                                  aria-label={`How strict for ${row.label}`}
+                                  value={row.severity === "needs_confirmation" ? null : row.severity}
                                   onChange={(_, value: Severity | null) => {
-                                    if (value) setExclusion(choice.codes, true, value);
+                                    if (value) setExclusion(row.codes, true, value);
                                   }}
                                 >
                                   <ToggleButton value="strict" sx={{ px: 1.5 }}>
@@ -422,7 +437,7 @@ export function Composer({ slug }: { slug: string }) {
                       fullWidth
                       size="small"
                       value={controls.occasion ?? ""}
-                      onChange={(e) => { setSubmitted(null); setControls((c) => ({ ...c, occasion: e.target.value || null })); }}
+                      onChange={(e) => { invalidate(); setControls((c) => ({ ...c, occasion: e.target.value || null })); }}
                       slotProps={{ select: { native: true }, input: { sx: { height: 44 } } }}
                     >
                       <option value="">{intent?.occasion ? `From your words: ${intent.occasion}` : "Not specified"}</option>
@@ -442,7 +457,7 @@ export function Composer({ slug }: { slug: string }) {
                       size="small"
                       value={slotKey}
                       onChange={(e) => {
-                        setSubmitted(null);
+                        invalidate();
                         const v = e.target.value;
                         if (v === "any") setControls((c) => ({ ...c, pickup_window: null, pickup_date: null }));
                         else {
@@ -475,7 +490,7 @@ export function Composer({ slug }: { slug: string }) {
                               selected={on}
                               label={p.label}
                               onClick={() => {
-                                setSubmitted(null);
+                                invalidate();
                                 setControls((c) => {
                                   const prefs = new Set(c.preferences ?? []);
                                   const removed = new Set(c.removed_preferences ?? []);
@@ -535,7 +550,7 @@ export function Composer({ slug }: { slug: string }) {
                               onRemove={
                                 removable
                                   ? () => {
-                                      setSubmitted(null);
+                                      invalidate();
                                       if (f.key.startsWith("exclusion:")) setExclusion([f.code ?? f.key.split(":")[1]], false);
                                       else
                                         setControls((c) => ({
@@ -615,8 +630,14 @@ export function Composer({ slug }: { slug: string }) {
                       ) : (
                         <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: "flex-end", flexWrap: "wrap", mt: 2 }}>
                           <QuantityStepper label="People" value={controls.party_size ?? 2} min={1} max={40} onChange={(v) => setControls((c) => ({ ...c, party_size: v }))} />
-                          <Button variant="contained" onClick={() => void submit({ ...controls, party_size: controls.party_size ?? 2 })}>
-                            Continue
+                          <Button
+                            variant="contained"
+                            onClick={() => {
+                              setControls((c) => ({ ...c, party_size: c.party_size ?? 2 }));
+                              resolve((c) => c.id === "party_size");
+                            }}
+                          >
+                            Done
                           </Button>
                         </Stack>
                       )}
