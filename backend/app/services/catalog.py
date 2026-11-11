@@ -201,11 +201,15 @@ def catalog_items(
     *,
     exclude_reservation_id: str | None = None,
     include_archived: bool = False,
+    include_without_photo: bool = False,
 ) -> list[CatalogItem]:
+    """Products as shoppers see them. A product without a photo isn't shown to shoppers until it has one."""
     now = now or clock.now()
     query = select(Product).where(Product.merchant_id == merchant.id)
     if not include_archived:
         query = query.where(Product.status != "archived")
+    if not include_without_photo:
+        query = query.where(Product.image_url.is_not(None))
     products = db.scalars(query.order_by(Product.sku)).all()
     ids = [p.id for p in products]
     prices = current_prices(db, ids, now)

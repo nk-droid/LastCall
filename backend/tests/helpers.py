@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import io
 from typing import Any
 
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy import select
 
 from app import clock
@@ -23,6 +25,13 @@ STRICT_NO_NUTS = {"exclusions": [{"code": "tree_nuts", "severity": "strict"}, {"
 def ok(response, status: int = 200) -> dict[str, Any]:
     assert response.status_code == status, f"{response.status_code}: {response.text}"
     return response.json()
+
+
+def upload_photo(member: TestClient, color: tuple[int, int, int] = (214, 160, 80)) -> str:
+    """URL of a small photo uploaded by the member's shop (new products need one)."""
+    out = io.BytesIO()
+    Image.new("RGB", (32, 24), color).save(out, format="PNG")
+    return ok(member.post("/api/merchant/assets", files={"file": ("photo.png", out.getvalue(), "image/png")}), 201)["url"]
 
 
 def parse(client: TestClient, text: str, controls: dict[str, Any] | None = None, merchant: str = SHOP, use_ai: bool = True) -> dict[str, Any]:

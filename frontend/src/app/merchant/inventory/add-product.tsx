@@ -1,6 +1,6 @@
 "use client";
 
-import { AddRounded, DeleteOutlineRounded, UploadRounded } from "@mui/icons-material";
+import { AddRounded, UploadRounded } from "@mui/icons-material";
 import {
   Alert,
   Box,
@@ -119,7 +119,7 @@ function AddProductDialog({ rows, onClose, onCreated }: { rows: InventoryRow[]; 
     }
   }
 
-  const valid = f.name.trim().length >= 2 && reference > 0 && sale > 0 && sale <= reference && f.reference_source.trim().length >= 4;
+  const valid = !!photo && f.name.trim().length >= 2 && reference > 0 && sale > 0 && sale <= reference && f.reference_source.trim().length >= 4;
   return (
     <Dialog open onClose={onClose} side title="Add a product" description="Prices, allergens and stock come only from what you enter here."
       actions={
@@ -155,12 +155,12 @@ function AddProductDialog({ rows, onClose, onCreated }: { rows: InventoryRow[]; 
         </Grid>
 
         <Box>
-          <Typography variant="subtitle2" component="p">Photo</Typography>
+          <Typography variant="subtitle2" component="p">Photo *</Typography>
           <Typography variant="caption" color="text.secondary" component="p">
-            Optional. Use a real photo of this product; without one, shoppers see a plain placeholder.
+            Required. Use a real photo of this product; shoppers only see products that have one.
           </Typography>
           <Stack direction="row" spacing={1.5} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap", mt: 1.25 }}>
-            <ProductImage image={{ url: photo, alt: photo ? `Photo of ${f.name || "the new product"}` : "" }} category={f.category} size="sm" />
+            <ProductImage image={{ url: photo, alt: photo ? `Photo of ${f.name || "the new product"}` : "No photo yet" }} size="sm" />
             <input
               ref={fileRef}
               type="file"
@@ -173,11 +173,6 @@ function AddProductDialog({ rows, onClose, onCreated }: { rows: InventoryRow[]; 
             <Button size="small" variant="outlined" color="inherit" startIcon={<UploadRounded />} loading={uploading} disabled={busy} onClick={() => fileRef.current?.click()}>
               {photo ? "Replace photo" : "Upload photo"}
             </Button>
-            {photo ? (
-              <Button size="small" color="inherit" startIcon={<DeleteOutlineRounded />} disabled={busy || uploading} onClick={() => setPhoto(null)}>
-                Remove
-              </Button>
-            ) : null}
             <Typography variant="caption" color="text.secondary">JPEG, PNG or WebP · up to 8 MB</Typography>
           </Stack>
         </Box>

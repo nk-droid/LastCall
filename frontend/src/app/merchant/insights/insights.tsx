@@ -361,7 +361,7 @@ function ListTomorrow({ d }: { d: InsightsSummary }) {
                   <TableRow key={i.product_id}>
                     <TableCell>
                       <Stack direction="row" spacing={1.25} sx={{ alignItems: "center" }}>
-                        <ProductImage image={i.image} category={i.category} size="sm" sx={{ width: 32, height: 32, borderRadius: "8px", "& svg": { fontSize: 18 } }} />
+                        <ProductImage image={i.image} size="sm" sx={{ width: 32, height: 32, borderRadius: "8px" }} />
                         <Typography variant="body2" sx={{ fontWeight: 600 }}>{i.name}</Typography>
                       </Stack>
                     </TableCell>

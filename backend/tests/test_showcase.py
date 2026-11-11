@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 
+import pytest
 from PIL import Image
 from sqlalchemy import func, select
 
@@ -18,6 +19,19 @@ from .conftest import new_client
 from .factories import member_client
 from .helpers import available, buy, ok, shop_id
 
+BUNDLED = showcase.PHOTOS
+
+
+@pytest.fixture(autouse=True)
+def tiny_photos(tmp_path_factory, monkeypatch):
+    """Seed with tiny stand-ins for the bundled photos (shoppers only see products with a photo)."""
+    folder = tmp_path_factory.getbasetemp() / "showcase-photos"
+    if not folder.exists():
+        for spec in showcase.SHOWCASE:
+            (folder / spec["slug"]).mkdir(parents=True)
+            for i, item in enumerate(spec["catalog"]):
+                Image.new("RGB", (8, 6), (i * 20 % 255, 120, 80)).save(folder / spec["slug"] / f"{item['sku']}.png")
+    monkeypatch.setattr(showcase, "PHOTOS", folder)
 
 def test_seed_creates_live_shops_once_with_staff_and_payees(app, monkeypatch):
     monkeypatch.setenv("SHOWCASE_PAYEE_JUNIPER_RYE", "JUNIPERRYE001")
@@ -89,11 +103,11 @@ def test_manager_publishes_listing_from_the_console(app):
 
 
 def test_bundled_photos_cover_every_showcase_product_with_a_credit():
-    credits = json.loads((showcase.PHOTOS / "credits.json").read_text())
+    credits = json.loads((BUNDLED / "credits.json").read_text())
     for spec in showcase.SHOWCASE:
         for item in spec["catalog"]:
             key = f"{spec['slug']}/{item['sku']}"
-            assert any((showcase.PHOTOS / f"{key}.{ext}").exists() for ext in ("jpg", "png", "webp")), f"no photo for {key}"
+            assert any((BUNDLED / f"{key}.{ext}").exists() for ext in ("jpg", "png", "webp")), f"no photo for {key}"
             assert credits[key]["license"] and credits[key]["author"] and credits[key]["url"].startswith("https://"), key
 
 

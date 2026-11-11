@@ -1,25 +1,15 @@
 "use client";
 
-import { BakeryDiningRounded, BreakfastDiningRounded, CakeRounded, CookieRounded, LunchDiningRounded } from "@mui/icons-material";
 import { Box } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 
 import type { ImageRef } from "@/lib/types";
 
-import { brand, sxs, type Icon } from "./ui";
+import { brand, sxs } from "./ui";
 
-const CATEGORY_ICON: Record<string, Icon> = {
-  pastry: BakeryDiningRounded,
-  bread: BreakfastDiningRounded,
-  cookie: CookieRounded,
-  cake: CakeRounded,
-  savory: LunchDiningRounded,
-};
-
-/** A product photo from the shop, or (until one is uploaded) a quiet labelled placeholder. Never a fake photo. */
-export function ProductImage({ image, category, sx, size = "md", rounded = true }: {
+/** A product photo from the shop. Shoppers only see products that have one; until it's uploaded the shop sees an empty frame. */
+export function ProductImage({ image, sx, size = "md", rounded = true }: {
   image: ImageRef;
-  category?: string;
   sx?: SxProps<Theme>;
   size?: "sm" | "md" | "lg";
   rounded?: boolean;
@@ -30,10 +20,16 @@ export function ProductImage({ image, category, sx, size = "md", rounded = true 
     const src = size === "sm" ? `${image.url}?size=thumb` : image.url;
     return <Box component="img" src={src} alt={image.alt} loading="lazy" decoding="async" sx={sxs(dims, shape, { objectFit: "cover", bgcolor: brand.sand }, sx)} />;
   }
-  const Glyph = CATEGORY_ICON[category ?? ""] ?? BakeryDiningRounded;
   return (
-    <Box role="img" aria-label={image.alt} sx={sxs(dims, shape, { bgcolor: brand.mint, border: `1px solid ${brand.line}`, display: "grid", placeItems: "center", color: brand.leaf }, sx)}>
-      <Glyph aria-hidden sx={{ fontSize: size === "sm" ? 26 : 44, opacity: 0.75 }} />
+    <Box
+      role="img"
+      aria-label={image.alt}
+      sx={sxs(dims, shape, {
+        display: "grid", placeItems: "center", textAlign: "center", bgcolor: brand.sand, border: `1px dashed ${brand.line}`,
+        color: "text.secondary", fontSize: size === "sm" ? 10 : 13, fontWeight: 600, lineHeight: 1.2, p: 0.5,
+      }, sx)}
+    >
+      No photo
     </Box>
   );
 }

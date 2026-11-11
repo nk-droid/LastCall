@@ -19,9 +19,9 @@ from app.db import transaction
 from app.domain import ALLERGENS
 from app.errors import Conflict, NotFound, Unprocessable
 from app.ids import new_id
-from app.models import PRODUCT_CATEGORIES, AuditEvent, BundleQuote, InventoryEvent, InventoryLot, Merchant, Order, Price, Product
+from app.models import PRODUCT_CATEGORIES, Asset, AuditEvent, BundleQuote, InventoryEvent, InventoryLot, Merchant, Order, Price, Product
 from app.money import format_money
-from app.services import analytics, audit, jobs
+from app.services import analytics, audit, jobs, media
 from app.services.access import StaffContext, require_role
 from app.services.alerts import raise_alert, resolve_alerts
 from app.services.catalog import (
@@ -45,7 +45,7 @@ def inventory_rows(db: Session, merchant: Merchant, now: datetime) -> list[dict[
     ids = [p.id for p in products]
     avail = availability(db, merchant.id, now, ids)
     prices = current_prices(db, ids, now)
-    items = {i.product_id: i for i in catalog_items(db, merchant, now)}
+    items = {i.product_id: i for i in catalog_items(db, merchant, now, include_without_photo=True)}
     low = int(policy(merchant, "low_stock_threshold", 2))
     stale_minutes = int(policy(merchant, "stale_inventory_minutes", 240))
     rows = []
@@ -254,7 +254,6 @@ def _apply_product(product: Product, data: ProductInput, user: StaffContext) -> 
     product.description = data.description
     product.description_source = data.description_source
     product.category = data.category
-    product.image_url = data.image_url
     product.attributes = {
         **(product.attributes or {}),
         "flavor": data.flavor,
@@ -282,6 +281,16 @@ def _apply_product(product: Product, data: ProductInput, user: StaffContext) -> 
         product.relist_cutoff_local = data.relist.cutoff_local
 
 
+def _photo(db: Session, url: str | None, merchant_id: str, current: str | None) -> str | None:
+    """A product photo is one this shop uploaded (or a bundled showcase photo). Left out on an edit, the current photo stays."""
+    if url is None or url == current:
+        return current
+    asset = db.get(Asset, url.removeprefix(media.url("")))
+    if asset is None or asset.merchant_id not in (merchant_id, None):
+        raise Unprocessable("Upload a photo of this product", code="photo_invalid")
+    return url
+
+
 def update_product(user: StaffContext, product_id: str, data: ProductInput) -> dict[str, Any]:
     require_role(user, "manager")
     with transaction() as db:
@@ -291,6 +300,7 @@ def update_product(user: StaffContext, product_id: str, data: ProductInput) -> d
             raise NotFound("Product not found")
         before = {"allergens": product.allergens, "name": product.name, "description": product.description}
         _apply_product(product, data, user)
+        product.image_url = _photo(db, data.image_url, user.merchant_id, product.image_url)
         product.updated_at = clock.now()
         audit.record(db, actor=user.actor, actor_role=user.role, entity_type="product", entity_id=product.id, action="product_updated",
                      meta={"before": before, "after": {"allergens": product.allergens, "name": product.name, "description": product.description}})
@@ -300,6 +310,7 @@ def update_product(user: StaffContext, product_id: str, data: ProductInput) -> d
 
 class NewProduct(ProductInput):
     sku: str = Field(pattern=r"^[A-Z0-9][A-Z0-9-]{1,15}$")
+    image_url: str = Field(max_length=500)  # shoppers only see products with a real photo
     surplus: int = Field(ge=0, le=500)
     reference_minor: int = Field(ge=1, le=100_000)
     sale_minor: int = Field(ge=1, le=100_000)
@@ -318,6 +329,7 @@ def create_product(user: StaffContext, data: NewProduct) -> dict[str, Any]:
         now = clock.now()
         product = Product(id=new_id("prd"), merchant_id=merchant.id, sku=data.sku, status="active")
         _apply_product(product, data, user)
+        product.image_url = _photo(db, data.image_url, merchant.id, None)
         db.add(product)
         db.flush()
         db.add(Price(id=new_id("prc"), product_id=product.id, sku=data.sku, currency=merchant.currency, reference_minor=data.reference_minor,

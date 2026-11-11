@@ -7,8 +7,11 @@ import io
 import pytest
 from PIL import Image
 
+from app.db import transaction
+from app.models import BundleQuote, Order, Product
+
 from .factories import member_client
-from .helpers import ok, product_id, shop_id
+from .helpers import bookable_slot, buy, ok, product_id, shop_id
 from .test_catalog import NEW_PRODUCT
 from .test_checkout import _product_input
 
@@ -71,11 +74,46 @@ def test_product_photo_must_be_an_uploaded_asset(app, client):
     assert pid == product_id("CR-01")
 
 
-def test_new_product_is_listed_with_its_uploaded_photo(app, client):
+def test_new_product_needs_a_photo_its_shop_uploaded(app, client):
     manager = member_client(app, shop_id(), "manager")[0]
     photo = ok(_upload(manager, _jpeg(exif=False)), 201)
-    assert manager.post("/api/merchant/products", json={**NEW_PRODUCT, "image_url": "https://example.com/stock.jpg"}).status_code == 422
+    assert manager.post("/api/merchant/products", json=NEW_PRODUCT).status_code == 422
+    for fake in ("https://example.com/stock.jpg", "/api/assets/img_not_uploaded"):
+        assert manager.post("/api/merchant/products", json={**NEW_PRODUCT, "image_url": fake}).status_code == 422
     row = ok(manager.post("/api/merchant/products", json={**NEW_PRODUCT, "image_url": photo["url"]}), 201)["row"]
     assert row["image"]["url"] == photo["url"]
     item = next(i for i in ok(client.get("/api/merchants/juniper-rye/catalog"))["items"] if i["sku"] == NEW_PRODUCT["sku"])
     assert item["image"] == {"url": photo["url"], "alt": f"Photo of {NEW_PRODUCT['name']}"}
+
+
+def test_product_without_a_photo_is_hidden_from_shoppers_until_it_has_one(app, client):
+    manager = member_client(app, shop_id(), "manager")[0]
+    pid, body = _product_input(manager, "CR-01")
+    with transaction() as db:
+        db.get(Product, pid).image_url = None  # a product listed before photos were required
+    assert "CR-01" not in {i["sku"] for i in ok(client.get("/api/merchants/juniper-rye/catalog"))["items"]}
+    quote = client.post("/api/quotes", json={"merchant": "juniper-rye", "lines": [{"sku": "CR-01", "qty": 1}], "pickup_slot_id": bookable_slot(client)})
+    assert quote.status_code == 409 and quote.json()["error"]["details"]["problems"][0]["sku"] == "CR-01"
+    row = next(r for r in ok(manager.get("/api/merchant/inventory"))["rows"] if r["sku"] == "CR-01")
+    assert row["image"]["url"] is None  # the shop still sees it, to add a photo
+    photo = ok(_upload(manager, _jpeg(exif=False)), 201)
+    ok(manager.put(f"/api/merchant/products/{pid}", json={**body, "image_url": photo["url"]}))
+    ok(manager.put(f"/api/merchant/products/{pid}", json=body))  # an edit without a photo keeps the current one
+    item = next(i for i in ok(client.get("/api/merchants/juniper-rye/catalog"))["items"] if i["sku"] == "CR-01")
+    assert item["image"]["url"] == photo["url"]
+
+
+def test_order_sold_before_its_photo_shows_it_but_keeps_its_prices(app, client):
+    co, _ = buy(client, [("CR-01", 2)])
+    with transaction() as db:  # an order placed before the product had a photo
+        quote = db.get(BundleQuote, db.get(Order, co["order_id"]).quote_id)
+        quote.item_lines = [{**line, "image": {"url": None, "alt": "Butter croissant (no photo yet)"}} for line in quote.item_lines]
+    line = ok(client.get(f"/api/orders/{co['order_id']}"))["lines"][0]
+    manager = member_client(app, shop_id(), "manager")[0]
+    photo = ok(_upload(manager, _jpeg(exif=False)), 201)
+    pid, body = _product_input(manager, "CR-01", image_url=photo["url"])
+    ok(manager.put(f"/api/merchant/products/{pid}", json=body))
+    ok(manager.post(f"/api/merchant/products/{pid}/price", json={"reference_minor": 900, "sale_minor": 500, "reference_source": "Menu board"}))
+    after = ok(client.get(f"/api/orders/{co['order_id']}"))["lines"][0]
+    assert after["image"] == {"url": photo["url"], "alt": "Photo of Butter croissant"}
+    assert {k: after[k] for k in after if k != "image"} == {k: line[k] for k in line if k != "image"}  # still as sold
