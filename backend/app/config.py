@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     # email and "PayPal account ID (payer ID)" / account verification attributes, and add {PUBLIC_APP_URL}/merchant/paypal/return
     # as its return URL. When off, owners enter their merchant ID instead.
     paypal_connect_enabled: bool = False
+    # LastCall's commission on each paid order's items (at their surplus price), with a per-order minimum. Shoppers pay
+    # nothing extra; each shop gets a weekly PayPal invoice. Each order keeps the terms it was paid under.
+    platform_fee_bps: int = 1000
+    platform_fee_min_minor: int = 25
 
     # LLM adapter. "ollama" calls Ollama through LangChain (ChatOllama): by default Ollama's cloud
     # API, authenticated with OLLAMA_API_KEY. A local daemon works too (OLLAMA_HOST=http://localhost:11434,

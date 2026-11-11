@@ -39,7 +39,7 @@ from app.payments import get_client
 from app.payments.base import PayPalError, PayPalOutcomeUnknown, extract_capture, order_amount, order_reference, trim
 from app.payments.payee import payee_object
 from app.security import order_link_token, pickup_code, pickup_code_hash, token_hash
-from app.services import analytics, audit, jobs, notify, substitution
+from app.services import analytics, audit, fees, jobs, notify, substitution
 from app.services import quotes as qs
 from app.services import reservations as rsv
 from app.services.alerts import raise_alert
@@ -512,6 +512,7 @@ def apply_capture_result(attempt_id: str, provider_payload: dict[str, Any], *, s
             order.confirmed_at = order.confirmed_at or now
             quote = db.get(BundleQuote, attempt.quote_id, with_for_update=True)
             quote.status = "CONVERTED"
+            fees.accrue(db, order, quote, now)  # LastCall's commission, billed to the shop weekly
             res = db.get(Reservation, order.reservation_id, with_for_update=True)
             issues = rsv.commit(db, res, merchant, now)
             if issues:

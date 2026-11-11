@@ -19,6 +19,7 @@ from app.models.catalog import (
     Price,
     Product,
 )
+from app.models.fees import FeeInvoice, PlatformFee
 from app.models.media import Asset
 from app.models.merchants import MERCHANT_STATUSES, Merchant
 from app.models.notifications import EmailMessage
@@ -29,6 +30,6 @@ from app.models.watches import Watch, WatchMatch
 
 __all__ = [
     "MERCHANT_STATUSES", "PRODUCT_CATEGORIES", "SHOP_ROLES",
-    "AgentProposal", "AgentRun", "AgentStep", "AIInvocation", "Conversation", "AnalyticsEvent", "Asset", "AuditEvent", "BundleProposal", "BundleQuote", "CustomerIntent", "Base", "EmailMessage", "FaultInjection", "InventoryEvent", "InventoryLot", "Invite", "Job", "Membership", "Merchant",
-    "MerchantAlert", "MetricSnapshot", "Order", "PasswordReset", "PaymentAttempt", "PickupSlot", "Price", "Product", "Refund", "Reservation", "ReservationLine", "SubstitutionOffer", "SupportRequest", "Watch", "WatchMatch", "SystemState", "User", "UserSession", "WebhookEvent",
+    "AgentProposal", "AgentRun", "AgentStep", "AIInvocation", "Conversation", "AnalyticsEvent", "Asset", "AuditEvent", "BundleProposal", "BundleQuote", "CustomerIntent", "Base", "EmailMessage", "FaultInjection", "FeeInvoice", "InventoryEvent", "InventoryLot", "Invite", "Job", "Membership", "Merchant",
+    "MerchantAlert", "MetricSnapshot", "Order", "PasswordReset", "PaymentAttempt", "PickupSlot", "PlatformFee", "Price", "Product", "Refund", "Reservation", "ReservationLine", "SubstitutionOffer", "SupportRequest", "Watch", "WatchMatch", "SystemState", "User", "UserSession", "WebhookEvent",
 ]

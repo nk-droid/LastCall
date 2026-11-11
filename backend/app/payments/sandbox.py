@@ -171,6 +171,18 @@ class SandboxPayPalClient:
         result = self._request("POST", "/v1/notifications/verify-webhook-signature", op="verify_webhook", raw_content=envelope)
         return result.get("verification_status") == "SUCCESS"
 
+    # ------------------------------------------------------------------ Invoicing v2 (LastCall's fees to shops)
+
+    def create_invoice(self, body: dict[str, Any], request_id: str) -> dict[str, Any]:
+        return self._request("POST", "/v2/invoicing/invoices", op="create_invoice", body=body, request_id=request_id)
+
+    def send_invoice(self, invoice_id: str, request_id: str) -> dict[str, Any]:
+        return self._request("POST", f"/v2/invoicing/invoices/{invoice_id}/send", op="send_invoice", request_id=request_id,
+                             body={"send_to_invoicer": False, "send_to_recipient": True})
+
+    def get_invoice(self, invoice_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/v2/invoicing/invoices/{invoice_id}", op="get_invoice")
+
     # ------------------------------------------------------------------ Log in with PayPal (connecting a shop)
 
     def login_url(self, state: str, redirect_uri: str) -> str:

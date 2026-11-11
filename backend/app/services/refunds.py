@@ -23,7 +23,7 @@ from app.money import format_money, to_decimal_string
 from app.payments import get_client
 from app.payments.base import PayPalError, PayPalOutcomeUnknown
 from app.payments.payee import auth_assertion
-from app.services import analytics, audit, jobs, notify
+from app.services import analytics, audit, fees, jobs, notify
 from app.services import reservations as rsv
 from app.services.access import StaffContext, require_role
 from app.services.alerts import raise_alert, resolve_alerts
@@ -151,6 +151,7 @@ def apply_refund_result(refund_id: str, result: dict[str, Any]) -> str:
             refund.state = "COMPLETED"
             refund.completed_at = clock.now()
             order.refund_status = "COMPLETED"
+            fees.adjust(db, order)  # no commission on money given back
             analytics.track(db, "refund_verified", merchant_id=order.merchant_id, session_id=order.session_id, entity_type="refund",
                             entity_id=refund.id, properties={"amount_minor": refund.amount_minor})
             audit.record(db, actor="provider:paypal", actor_role="system", entity_type="refund", entity_id=refund.id, action="refund_completed",

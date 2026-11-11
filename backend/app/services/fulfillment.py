@@ -21,7 +21,7 @@ from app.db import transaction
 from app.errors import Conflict, NotFound, Unprocessable
 from app.models import AuditEvent, BundleQuote, Merchant, Order, PaymentAttempt, Refund, Reservation, SupportRequest, SystemState
 from app.security import verify_pickup_code
-from app.services import analytics, audit, notify, pickup
+from app.services import analytics, audit, fees, notify, pickup
 from app.services import reservations as rsv
 from app.services.access import StaffContext, has_role
 from app.services.alerts import resolve_alerts
@@ -124,6 +124,7 @@ def order_detail(user: StaffContext, order_id: str) -> dict[str, Any]:
                  "created_at": clock.iso(a.created_at), "captured_at": clock.iso(a.captured_at)}
                 for a in attempts
             ],
+            "platform_fee": fees.order_fee(db, order),
             "refunds": [
                 {"id": r.id, "state": r.state, "amount_minor": r.amount_minor, "paypal_refund_id": r.paypal_refund_id, "request_id": r.request_id,
                  "reason": r.reason, "requested_by": r.requested_by, "created_at": clock.iso(r.created_at), "completed_at": clock.iso(r.completed_at)}
