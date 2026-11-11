@@ -6,6 +6,8 @@ real end-of-day surplus, holds the stock while they pay with PayPal, and gives t
 Each shop runs its surplus, pickup queue, refunds and team from a tablet-friendly console, and is paid
 into its own PayPal business account.
 
+**Live app:** [lastcall-web-pqo4.onrender.com](https://lastcall-web-pqo4.onrender.com)
+
 > Payments run in the **PayPal Sandbox** (test money). The showcase shops, people and addresses are fictional.
 
 ## What makes it work
@@ -21,7 +23,7 @@ into its own PayPal business account.
 
 ## Try it
 
-The deployed app opens on four live showcase shops. **Night Owl Doughnuts takes pickups 24 hours a day**, so you can order at any hour.
+The [deployed app](https://lastcall-web-pqo4.onrender.com) opens on four live showcase shops. **Night Owl Doughnuts takes pickups 24 hours a day**, so you can order at any hour.
 
 **As a shopper (no account needed)**
 1. Open **Night Owl Doughnuts** (or Juniper & Rye during its 4–7 PM pickup window) and type a request, e.g. *breakfast for 2, severe nut allergy*.
