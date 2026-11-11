@@ -9,6 +9,7 @@ from PIL import Image
 
 from .factories import member_client
 from .helpers import ok, product_id, shop_id
+from .test_catalog import NEW_PRODUCT
 from .test_checkout import _product_input
 
 pytestmark = pytest.mark.usefixtures("bakery")
@@ -68,3 +69,13 @@ def test_product_photo_must_be_an_uploaded_asset(app, client):
     item = next(i for i in ok(client.get("/api/merchants/juniper-rye/catalog"))["items"] if i["sku"] == "CR-01")
     assert item["image"] == {"url": photo["url"], "alt": "Photo of Butter croissant"}
     assert pid == product_id("CR-01")
+
+
+def test_new_product_is_listed_with_its_uploaded_photo(app, client):
+    manager = member_client(app, shop_id(), "manager")[0]
+    photo = ok(_upload(manager, _jpeg(exif=False)), 201)
+    assert manager.post("/api/merchant/products", json={**NEW_PRODUCT, "image_url": "https://example.com/stock.jpg"}).status_code == 422
+    row = ok(manager.post("/api/merchant/products", json={**NEW_PRODUCT, "image_url": photo["url"]}), 201)["row"]
+    assert row["image"]["url"] == photo["url"]
+    item = next(i for i in ok(client.get("/api/merchants/juniper-rye/catalog"))["items"] if i["sku"] == NEW_PRODUCT["sku"])
+    assert item["image"] == {"url": photo["url"], "alt": f"Photo of {NEW_PRODUCT['name']}"}

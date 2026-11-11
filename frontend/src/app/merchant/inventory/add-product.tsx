@@ -1,8 +1,9 @@
 "use client";
 
-import { AddRounded } from "@mui/icons-material";
+import { AddRounded, DeleteOutlineRounded, UploadRounded } from "@mui/icons-material";
 import {
   Alert,
+  Box,
   Button,
   Checkbox,
   FormControl,
@@ -16,10 +17,11 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { useAnnounce } from "@/components/announcer";
 import { Dialog } from "@/components/dialog";
+import { ProductImage } from "@/components/product-image";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { ALLERGEN_LABEL } from "@/lib/format";
 import type { InventoryRow } from "@/lib/types";
@@ -61,6 +63,9 @@ function AddProductDialog({ rows, onClose, onCreated }: { rows: InventoryRow[]; 
   const [contains, setContains] = useState<string[]>([]);
   const [cross, setCross] = useState<string[]>([]);
   const [verified, setVerified] = useState(true);
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -69,6 +74,22 @@ function AddProductDialog({ rows, onClose, onCreated }: { rows: InventoryRow[]; 
   const sku = f.sku || skuFrom(f.name || "Item", taken);
   const reference = Math.round(Number(f.reference) * 100);
   const sale = Math.round(Number(f.sale) * 100);
+
+  async function upload(file: File) {
+    const form = new FormData();
+    form.append("file", file);
+    setUploading(true);
+    setError(null);
+    try {
+      setPhoto((await api<{ url: string }>("/api/merchant/assets", { body: form })).url);
+      announce("Photo added");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = ""; // picking the same file again still uploads
+    }
+  }
 
   async function submit() {
     setBusy(true);
@@ -81,7 +102,7 @@ function AddProductDialog({ rows, onClose, onCreated }: { rows: InventoryRow[]; 
           tags: f.tags.split(",").map((t) => t.trim()).filter(Boolean), ingredients: f.ingredients.trim(),
           dietary: { vegetarian: f.vegetarian, vegan: f.vegan },
           allergens: { contains, cross_contact: cross, status: verified ? "verified" : "needs_review", notes: "" },
-          per_order_limit: 6, surplus_priority: 1, surplus: Number(f.surplus), reference_minor: reference, sale_minor: sale,
+          per_order_limit: 6, surplus_priority: 1, surplus: Number(f.surplus), reference_minor: reference, sale_minor: sale, image_url: photo,
           reference_source: f.reference_source.trim(), cutoff_local: f.cutoff,
           relist: { enabled: f.repeat, qty: Number(f.surplus), cutoff_local: f.cutoff },
         },
@@ -104,7 +125,7 @@ function AddProductDialog({ rows, onClose, onCreated }: { rows: InventoryRow[]; 
       actions={
         <>
           <Button onClick={onClose} color="inherit">Cancel</Button>
-          <Button variant="contained" loading={busy} disabled={!valid} onClick={submit}>List product</Button>
+          <Button variant="contained" loading={busy} disabled={!valid || uploading} onClick={submit}>List product</Button>
         </>
       }>
       {error ? <Alert severity="error" role="alert" sx={{ mb: 2 }}>{error}</Alert> : null}
@@ -132,6 +153,34 @@ function AddProductDialog({ rows, onClose, onCreated }: { rows: InventoryRow[]; 
             <TextField type="number" label="Serves" fullWidth value={f.servings} onChange={set("servings")} slotProps={{ htmlInput: { min: 0.5, max: 12, step: 0.5 } }} />
           </Grid>
         </Grid>
+
+        <Box>
+          <Typography variant="subtitle2" component="p">Photo</Typography>
+          <Typography variant="caption" color="text.secondary" component="p">
+            Optional. Use a real photo of this product; without one, shoppers see a plain placeholder.
+          </Typography>
+          <Stack direction="row" spacing={1.5} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap", mt: 1.25 }}>
+            <ProductImage image={{ url: photo, alt: photo ? `Photo of ${f.name || "the new product"}` : "" }} category={f.category} size="sm" />
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="sr-only"
+              tabIndex={-1}
+              aria-label="Product photo file"
+              onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
+            />
+            <Button size="small" variant="outlined" color="inherit" startIcon={<UploadRounded />} loading={uploading} disabled={busy} onClick={() => fileRef.current?.click()}>
+              {photo ? "Replace photo" : "Upload photo"}
+            </Button>
+            {photo ? (
+              <Button size="small" color="inherit" startIcon={<DeleteOutlineRounded />} disabled={busy || uploading} onClick={() => setPhoto(null)}>
+                Remove
+              </Button>
+            ) : null}
+            <Typography variant="caption" color="text.secondary">JPEG, PNG or WebP · up to 8 MB</Typography>
+          </Stack>
+        </Box>
 
         <Grid container spacing={2}>
           <Grid size={{ xs: 6, sm: 3 }}>
