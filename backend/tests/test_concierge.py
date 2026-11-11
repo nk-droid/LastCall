@@ -152,6 +152,24 @@ def test_a_message_that_lists_option_ids_falls_back_to_a_plain_summary(client, f
     assert "prp" not in reply["text"]
 
 
+def test_every_shop_search_lists_the_shops_that_feed_the_party_first(client, fixture_llm, night_owl):
+    fixture_llm.queue(TASK, turn(call("find_bundles_everywhere", party_size=6)), first_option_per_shop())
+    send(client, "Treats for 6 people")
+    shops = tool_results(fixture_llm.calls[-1]["messages"])[0]["shops"]
+    cover = [max(min(o["servings"] / 6, 1.0) for o in s["options"]) for s in shops]
+    assert cover == sorted(cover, reverse=True)
+
+
+def test_a_message_that_lists_the_options_falls_back_to_a_plain_summary(client, fixture_llm, night_owl):
+    def listing(messages: list[dict]) -> dict:
+        ids = [shop["options"][0]["option_id"] for r in tool_results(messages) for shop in r.get("shops", []) if shop.get("options")]
+        return turn(call("respond", message="- Juniper & Rye: croissants\n- Night Owl: doughnuts", option_ids=ids[:2]))
+
+    fixture_llm.queue(TASK, turn(call("find_bundles_everywhere", party_size=4)), listing)
+    reply = send(client, "Snacks for 4 people")["messages"][-1]
+    assert reply["text"].startswith("Here are 2 options from")
+
+
 def test_a_shop_page_chat_cannot_search_every_shop(client, fixture_llm, night_owl):
     fixture_llm.queue(TASK, turn(call("find_bundles_everywhere", party_size=2)), turn(call("find_bundles", shop="night-owl", party_size=2)),
                       respond_with(1))
