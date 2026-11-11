@@ -141,6 +141,17 @@ def test_the_home_chat_checks_every_open_shop_in_one_call(client, fixture_llm, n
     assert convo["progress"] == ["Looking at today's shops", "Checking Juniper & Rye Bakehouse", "Checking Night Owl Doughnuts"]
 
 
+def test_a_message_that_lists_option_ids_falls_back_to_a_plain_summary(client, fixture_llm, night_owl):
+    def listing(messages: list[dict]) -> dict:
+        ids = [shop["options"][0]["option_id"] for r in tool_results(messages) for shop in r.get("shops", []) if shop.get("options")]
+        return turn(call("respond", message=" ".join(f"- {i} – a bundle." for i in ids), option_ids=ids[:2]))
+
+    fixture_llm.queue(TASK, turn(call("find_bundles_everywhere", party_size=4)), listing)
+    reply = send(client, "Snacks for 4 people")["messages"][-1]
+    assert reply["text"] == "Here are 2 options from Juniper & Rye Bakehouse and Night Owl Doughnuts that fit your request."
+    assert "prp" not in reply["text"]
+
+
 def test_a_shop_page_chat_cannot_search_every_shop(client, fixture_llm, night_owl):
     fixture_llm.queue(TASK, turn(call("find_bundles_everywhere", party_size=2)), turn(call("find_bundles", shop="night-owl", party_size=2)),
                       respond_with(1))

@@ -44,6 +44,7 @@ MAX_CARDS = 3
 HISTORY = 12
 STALE_AFTER = timedelta(seconds=120)
 HHMM = r"^(?:[01]\d|2[0-3]):[0-5]\d$"
+OPTION_ID = re.compile(r"\bprp[0-9a-f]{6,}(?::opt-\d+)?", re.IGNORECASE)
 
 
 # --------------------------------------------------------------------------- tool contracts
@@ -610,7 +611,8 @@ def _rules_reply(state: dict[str, Any], session_id: str) -> dict[str, Any]:
 def _reply(text: str, cards: list[dict[str, Any]], questions: list[str], state: dict[str, Any], *, source: str) -> dict[str, Any]:
     allowed = {format_money(c["total_minor"], c["currency"]).replace(" ", "") for c in cards}
     plain = re.sub(r"[*_`#>]+", "", text or "").replace("\n", " ")
-    clean = clean_customer_prose(plain, allowed_amounts=allowed, max_chars=400)
+    # A message that lists option ids is the model narrating its tool results; the cards already show them.
+    clean = "" if OPTION_ID.search(plain) else clean_customer_prose(plain, allowed_amounts=allowed, max_chars=400)
     if not clean:
         if cards:
             shops = list(dict.fromkeys(c["shop"]["name"] for c in cards))
