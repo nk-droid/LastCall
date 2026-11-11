@@ -30,7 +30,8 @@ export type Intent = {
 
 export type ConfigResponse = {
   /** client_id is null when the server has no PayPal credentials (checkout unavailable). */
-  paypal: { client_id: string | null; currency: string };
+  /** connect: owners can connect their payout account by signing in with PayPal (otherwise they enter a merchant ID). */
+  paypal: { client_id: string | null; currency: string; connect: boolean };
   ai: { enabled: boolean };
 };
 
@@ -478,7 +479,9 @@ export type Overview = {
   paypal: { payouts: PayoutStatus; reachable: boolean | null; checked_at: string | null };
 };
 
-export type PayoutStatus = { status: "connected" | "not_connected"; display?: string; verified_at?: string | null };
+export type PayoutStatus = {
+  status: "connected" | "not_connected"; display?: string; verified_at?: string | null; via?: "paypal" | "merchant_id"; email?: string | null;
+};
 
 export type OrderDetail = OrderSummary & {
   customer_contact: { name?: string; email?: string | null; phone?: string | null };

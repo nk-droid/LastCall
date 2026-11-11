@@ -12,6 +12,7 @@ import logging
 import threading
 import time
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
@@ -21,6 +22,9 @@ from app.payments.base import PayPalError, PayPalOutcomeUnknown
 log = logging.getLogger(__name__)
 
 SANDBOX_API_BASE = "https://api-m.sandbox.paypal.com"
+SANDBOX_WEB_BASE = "https://www.sandbox.paypal.com"
+# Log in with PayPal: who the account is (payer ID) and whether PayPal has verified it.
+LOGIN_SCOPES = "openid email https://uri.paypal.com/services/paypalattributes"
 
 
 class SandboxPayPalClient:
@@ -167,9 +171,48 @@ class SandboxPayPalClient:
         result = self._request("POST", "/v1/notifications/verify-webhook-signature", op="verify_webhook", raw_content=envelope)
         return result.get("verification_status") == "SUCCESS"
 
+    # ------------------------------------------------------------------ Log in with PayPal (connecting a shop)
+
+    def login_url(self, state: str, redirect_uri: str) -> str:
+        query = urlencode({"flowEntry": "static", "client_id": self._client_id, "response_type": "code", "scope": LOGIN_SCOPES,
+                           "redirect_uri": redirect_uri, "state": state})
+        return f"{SANDBOX_WEB_BASE}/connect/?{query}"
+
+    def login_identity(self, code: str) -> dict[str, Any]:
+        """Exchange a Log in with PayPal code for the account it signed in: payer ID, verification and email."""
+        try:
+            token = self._http.post("/v1/oauth2/token", data={"grant_type": "authorization_code", "code": code},
+                                    auth=(self._client_id, self._client_secret), headers={"Accept": "application/json"})
+        except httpx.HTTPError as exc:
+            raise PayPalOutcomeUnknown("login_token", exc.__class__.__name__) from exc
+        if token.status_code != 200:
+            error = _json(token)
+            raise PayPalError(token.status_code, "LOGIN_FAILED", error.get("error_description") or "PayPal didn't accept the sign-in",
+                              issue=error.get("error"), debug_id=token.headers.get("paypal-debug-id"))
+        try:
+            info = self._http.get("/v1/identity/oauth2/userinfo", params={"schema": "paypalv1.1"},
+                                  headers={"Authorization": f"Bearer {token.json()['access_token']}", "Accept": "application/json"})
+        except httpx.HTTPError as exc:
+            raise PayPalOutcomeUnknown("login_userinfo", exc.__class__.__name__) from exc
+        if info.status_code != 200:
+            raise PayPalError(info.status_code, "LOGIN_FAILED", "PayPal didn't share the account details", issue=_json(info).get("name"),
+                              debug_id=info.headers.get("paypal-debug-id"))
+        data = info.json()
+        emails = data.get("emails") or []
+        email = next((e.get("value") for e in emails if e.get("primary")), emails[0].get("value") if emails else data.get("email"))
+        return {"payer_id": data.get("payer_id"), "verified": str(data.get("verified_account")).lower() == "true", "email": email}
+
     def check_connection(self) -> dict[str, Any]:
         try:
             self._access_token(force=True)
             return {"ok": True, "environment": "sandbox", "base_url": self.base_url, "webhook_configured": bool(self.webhook_id)}
         except (PayPalError, PayPalOutcomeUnknown) as exc:
             return {"ok": False, "environment": "sandbox", "base_url": self.base_url, "error": str(exc)}
+
+
+def _json(response: httpx.Response) -> dict[str, Any]:
+    try:
+        data = response.json()
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}

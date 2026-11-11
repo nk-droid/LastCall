@@ -133,7 +133,8 @@ def config(_: str = Depends(shopper_session)) -> dict[str, Any]:
     s = settings()
     # The public client ID loads PayPal's buttons; null means checkout isn't available.
     return {"ai": {"enabled": describe_provider()["enabled"]},
-            "paypal": {"client_id": s.paypal_client_id if s.paypal_configured else None, "currency": "USD"}}
+            "paypal": {"client_id": s.paypal_client_id if s.paypal_configured else None, "currency": "USD",
+                       "connect": s.paypal_configured and s.paypal_connect_enabled}}
 
 
 class ClientEvent(BaseModel):

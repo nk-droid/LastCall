@@ -60,6 +60,18 @@ def connect_payouts(body: payouts.PayoutAccount, ctx: StaffContext = Depends(sta
     return payouts.connect(ctx, body)
 
 
+@router.post("/merchant/shop/payouts/paypal/start")
+def connect_with_paypal(ctx: StaffContext = Depends(staff_role("owner"))) -> dict[str, Any]:
+    """Start Connect with PayPal: returns the PayPal sign-in URL."""
+    return payouts.connect_start(ctx)
+
+
+@router.post("/merchant/shop/payouts/paypal/finish")
+def finish_paypal_connect(body: payouts.ConnectFinish, ctx: StaffContext = Depends(staff_role("owner"))) -> dict[str, Any]:
+    """PayPal sent the owner back with a code: connect the account they signed in with."""
+    return payouts.connect_finish(ctx, body)
+
+
 @router.delete("/merchant/shop/payouts")
 def disconnect_payouts(ctx: StaffContext = Depends(staff_role("owner"))) -> dict[str, Any]:
     return payouts.disconnect(ctx)

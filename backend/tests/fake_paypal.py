@@ -19,6 +19,7 @@ import threading
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
+from urllib.parse import urlencode
 
 from app import clock
 from app.payments.base import PayPalError
@@ -61,6 +62,7 @@ class FakePayPal:
         self.refund_pending = False  # the next refund comes back PENDING
         self.invalid_payees: set[str] = set()  # payee merchant IDs / emails PayPal would reject
         self.assertions: list[str | None] = []  # PayPal-Auth-Assertion values seen on refunds
+        self.logins: dict[str, dict[str, Any]] = {}  # Log in with PayPal: authorization code -> the account that signed in
         self._lock = threading.RLock()
 
     # ------------------------------------------------------------------ the buyer, in PayPal's window
@@ -215,6 +217,22 @@ class FakePayPal:
                                 raise PayPalError(403, "NOT_AUTHORIZED", "Authorization failed due to insufficient permissions", issue="PERMISSION_DENIED")
                             return _public(copy.deepcopy(refund))
         raise PayPalError(404, "RESOURCE_NOT_FOUND", "Refund not found", issue="INVALID_RESOURCE_ID")
+
+    # ------------------------------------------------------------------ Log in with PayPal
+
+    def sign_in(self, payer_id: str, *, verified: bool = True, email: str = "owner@juniper-rye.com") -> str:
+        """Play the owner signing in on PayPal's page; returns the code PayPal would send back."""
+        code = _pid("CODE")
+        self.logins[code] = {"payer_id": payer_id, "verified": verified, "email": email}
+        return code
+
+    def login_url(self, state: str, redirect_uri: str) -> str:
+        return f"https://www.sandbox.paypal.com/connect/?{urlencode({'state': state, 'redirect_uri': redirect_uri})}"
+
+    def login_identity(self, code: str) -> dict[str, Any]:
+        if code not in self.logins:
+            raise PayPalError(400, "LOGIN_FAILED", "Invalid authorization code", issue="invalid_grant")
+        return dict(self.logins.pop(code))  # a code works once
 
     # ------------------------------------------------------------------ Webhooks
 

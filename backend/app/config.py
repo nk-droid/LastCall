@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     paypal_webhook_id: str | None = None
     paypal_timeout_seconds: float = 20.0
     paypal_brand_name: str = "LastCall"
+    # "Connect with PayPal" for shop payouts (Log in with PayPal). Turn on Log in with PayPal in the PayPal app, with the
+    # email and "PayPal account ID (payer ID)" / account verification attributes, and add {PUBLIC_APP_URL}/merchant/paypal/return
+    # as its return URL. When off, owners enter their merchant ID instead.
+    paypal_connect_enabled: bool = False
 
     # LLM adapter. "ollama" calls Ollama through LangChain (ChatOllama): by default Ollama's cloud
     # API, authenticated with OLLAMA_API_KEY. A local daemon works too (OLLAMA_HOST=http://localhost:11434,
