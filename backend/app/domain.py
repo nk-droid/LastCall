@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -149,12 +150,21 @@ class DietaryCheck:
 def source_label(allergens: dict[str, Any]) -> str:
     status = allergens.get("status", "missing")
     if status == "verified":
-        who = allergens.get("verified_by") or "merchant"
-        when = allergens.get("verified_at") or ""
-        return f"Merchant-verified by {who}{(' on ' + when) if when else ''}"
+        who = allergens.get("verified_by") or "the shop"
+        when = _day(allergens.get("verified_at") or "")
+        return f"Verified by {who}{' at the shop' if who != 'the shop' else ''}{(' on ' + when) if when else ''}"
     if status == "needs_review":
         return "Merchant allergen status requires review"
     return "No allergen information supplied"
+
+
+def _day(value: str) -> str:
+    """'2026-11-05' (or a timestamp) as 'Nov 5, 2026'; anything else as given."""
+    try:
+        day = date.fromisoformat(value[:10])
+    except ValueError:
+        return value
+    return f"{day:%b} {day.day}, {day.year}"
 
 
 def check_dietary(allergens: dict[str, Any], attributes: dict[str, Any], intent: Intent) -> DietaryCheck:
