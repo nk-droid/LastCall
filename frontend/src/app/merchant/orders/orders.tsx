@@ -12,6 +12,7 @@ import {
   GppMaybeRounded,
   Inventory2Rounded,
   KeyRounded,
+  PaymentsRounded,
   ReceiptLongRounded,
   ReplayRounded,
   SearchOffRounded,
@@ -41,7 +42,7 @@ import {
 } from "@mui/material";
 import type { Theme } from "@mui/material/styles";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useId, useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useId, useState, type FormEvent, type ReactNode } from "react";
 
 import { useAnnounce } from "@/components/announcer";
 import { Dialog } from "@/components/dialog";
@@ -416,7 +417,8 @@ function OrderDetailPanel({ orderId, onChanged }: { orderId: string; onChanged: 
         <Section title="Messages">
           <Stack spacing={1.5}>
             {d.support.map((s) => (
-              <SupportReply key={s.id} message={s} busy={busy === `reply-${s.id}`}
+              // Keyed by draft source so the agent's draft replaces the template when it arrives.
+              <SupportReply key={`${s.id}:${s.ai_draft_source}`} message={s} busy={busy === `reply-${s.id}`}
                 onSend={(reply) => act(`reply-${s.id}`, `/api/merchant/support/${s.id}/reply`, { reply }, "Reply sent to the customer's pickup pass.")} />
             ))}
           </Stack>
@@ -538,11 +540,24 @@ function SupportReply({ message, onSend, busy }: { message: OrderDetail["support
         </Box>
       ) : (
         <Box component="form" onSubmit={(e: FormEvent) => { e.preventDefault(); void onSend(reply); }} sx={{ mt: 1.5 }}>
-          {message.ai_draft_source === "ai" ? (
-            <StatusChip tone="info" icon={AutoAwesomeRounded} label="AI draft · review before sending" />
-          ) : (
+          {message.ai_draft_source === "rules" ? (
             <StatusChip tone="neutral" icon={DescriptionRounded} label="Template draft" />
+          ) : (
+            <StatusChip tone="info" icon={AutoAwesomeRounded} label={message.ai_checks.length ? "AI draft · checked with PayPal" : "AI draft · review before sending"} />
           )}
+          {message.ai_checks.length ? (
+            <Box component="dl" aria-label="What PayPal reported" sx={{ m: 0, mt: 1.25, display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 1.5, rowGap: 0.5 }}>
+              {message.ai_checks.map((c) => (
+                <Fragment key={c.label}>
+                  <Typography component="dt" variant="caption" color="text.secondary" sx={{ display: "flex", alignItems: "center", gap: 0.5, fontWeight: 700 }}>
+                    <PaymentsRounded aria-hidden sx={{ fontSize: 15, color: brand.leaf }} />
+                    {c.label}
+                  </Typography>
+                  <Typography component="dd" variant="caption" sx={{ m: 0 }}>{c.value}</Typography>
+                </Fragment>
+              ))}
+            </Box>
+          ) : null}
           <TextField label="Reply" multiline minRows={3} fullWidth value={reply} onChange={(e) => setReply(e.target.value)}
             helperText="Drafts can't cancel, refund or change the order." sx={{ mt: 1.5 }} />
           <Button type="submit" size="small" variant="contained" startIcon={<SendRounded />} loading={busy} disabled={!reply.trim()} sx={{ mt: 1 }}>

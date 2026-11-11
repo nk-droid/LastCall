@@ -494,7 +494,10 @@ export type OrderDetail = OrderSummary & {
     created_at: string; captured_at: string | null;
   }[];
   refunds: { id: string; state: string; amount_minor: number; paypal_refund_id: string | null; request_id: string; reason: string; requested_by: string; created_at: string; completed_at: string | null }[];
-  support: { id: string; topic: string; message: string; ai_draft: string; ai_draft_source: string; status: string; staff_reply: string | null; replied_by: string | null; created_at: string }[];
+  support: {
+    id: string; topic: string; message: string; ai_draft: string; ai_draft_source: "rules" | "agent" | "ai"; ai_checks: { label: string; value: string }[];
+    ai_run_id: string | null; status: string; staff_reply: string | null; replied_by: string | null; created_at: string;
+  }[];
   timeline: { at: string; action: string; actor: string; entity: string; meta: Record<string, unknown> }[];
   trace_id: string;
 };

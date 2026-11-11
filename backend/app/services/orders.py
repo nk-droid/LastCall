@@ -13,16 +13,12 @@ import qrcode.image.svg
 from sqlalchemy import select
 
 from app import clock
-from app.ai import prompts
-from app.ai.provider import invoke_structured
-from app.ai.sanitize import clean_customer_prose
 from app.db import transaction
 from app.errors import Conflict, Unprocessable
 from app.ids import new_id
 from app.models import AuditEvent, BundleQuote, Merchant, Order, PaymentAttempt, Product, Refund, Reservation, SupportRequest
-from app.money import format_money
 from app.security import pickup_code
-from app.services import audit, jobs
+from app.services import audit, jobs, support
 from app.services import reservations as rsv
 from app.services.alerts import raise_alert
 from app.services.catalog import merchant_by_id, merchant_ref, policy
@@ -289,50 +285,25 @@ def cancel_unpaid(order_id: str, *, session_id: str | None, access_token: str | 
 
 def support_message(order_id: str, message: str, topic: str, *, session_id: str | None, access_token: str | None,
                 user_id: str | None = None) -> dict[str, Any]:
-    """Customer help request. L5 drafts a reply for staff; it has no authority over the order."""
+    """Customer help request. Staff get a template draft at once; the support agent then drafts a reply (checking the
+    payment with PayPal when the message is about money). Neither has any authority over the order."""
     message = (message or "").strip()
     if not message:
         raise Unprocessable("Write a message for the shop", code="empty_message")
     with transaction() as db:
         order = _order_access(db, order_id, session_id, access_token, user_id=user_id)
         merchant = merchant_by_id(db, order.merchant_id)
-        now = clock.now()
-        view = customer_view(db, order, merchant, now)
+        view = customer_view(db, order, merchant, clock.now())
         request_id = new_id("sup")
-        db.add(SupportRequest(id=request_id, order_id=order.id, topic=topic[:40], message=message[:1000], status="open"))
-        facts = {
-            "order_number": order.order_number,
-            "payment_status": order.payment_status,
-            "fulfillment_status": order.fulfillment_status,
-            "refund_status": order.refund_status,
-            "pickup_window": f"{view['pickup']['date_label']} {view['pickup']['label']}",
-            "items": [f"{line['qty']} {line['name']}" for line in view["lines"]],
-            "total": format_money(order.amount_minor, order.currency),
-            "cancellation_allowed": view["cancellation"]["can_request"],
-            "cancellation_allowed_until": view["cancellation"]["allowed_until_label"],
-        }
-        policy_text = {"cancellation": view["cancellation"]["policy_text"], "refund": view["cancellation"]["refund_policy_text"],
-                       "pickup": view["pickup"]["instructions"]}
-    outcome = invoke_structured(
-        task="L5_support",
-        prompt_version=prompts.SUPPORT_PROMPT_VERSION,
-        system=prompts.SUPPORT_SYSTEM,
-        payload={"order": facts, "policy": policy_text, "customer_message": message[:1000]},
-        output_model=prompts.AISupportDraft,
-    )
-    draft, source = _rules_support_draft(facts), "rules"
-    if outcome.ok:
-        cleaned = clean_customer_prose(outcome.data.reply, allowed_amounts={facts["total"]}, max_chars=650)
-        if cleaned:
-            draft, source = cleaned, "ai"
-    with transaction() as db:
-        row = db.get(SupportRequest, request_id, with_for_update=True)
-        row.ai_draft = draft
-        row.ai_draft_source = source
-        row.ai_invocation_id = outcome.invocation_id
-        order = db.get(Order, order_id)
-        merchant = merchant_by_id(db, order.merchant_id)
-        raise_alert(db, merchant.id, "support_request", "support", request_id, f"{facts['order_number']}: new customer message", severity="medium")
+        facts = {"order_number": order.order_number, "fulfillment_status": order.fulfillment_status,
+                 "pickup_window": f"{view['pickup']['date_label']} {view['pickup']['label']}",
+                 "cancellation_allowed": view["cancellation"]["can_request"],
+                 "cancellation_allowed_until": view["cancellation"]["allowed_until_label"]}
+        db.add(SupportRequest(id=request_id, order_id=order.id, topic=topic[:40], message=message[:1000], status="open",
+                              ai_draft=_rules_support_draft(facts), ai_draft_source="rules"))
+        db.flush()
+        support.queue_draft(db, request_id)
+        raise_alert(db, merchant.id, "support_request", "support", request_id, f"{order.order_number}: new customer message", severity="medium")
         return customer_view(db, order, merchant, clock.now())
 
 

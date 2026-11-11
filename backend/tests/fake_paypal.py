@@ -171,6 +171,8 @@ class FakePayPal:
     def get_capture(self, capture_id: str, auth_assertion: str | None = None) -> dict[str, Any]:
         with self._lock:
             order, capture = self._find_capture(capture_id)
+            if not self._assertion_matches(auth_assertion, order["purchase_units"][0].get("payee") or {}):
+                raise PayPalError(403, "NOT_AUTHORIZED", "Authorization failed due to insufficient permissions", issue="PERMISSION_DENIED")
             self._resolve_pending(order)
             return _public(copy.deepcopy(capture)) | {"supplementary_data": {"related_ids": {"order_id": order["id"]}}}
 
@@ -209,6 +211,8 @@ class FakePayPal:
                 for capture in order["purchase_units"][0].get("payments", {}).get("captures", []):
                     for refund in capture.get("_refunds", []):
                         if refund["id"] == refund_id:
+                            if not self._assertion_matches(auth_assertion, order["purchase_units"][0].get("payee") or {}):
+                                raise PayPalError(403, "NOT_AUTHORIZED", "Authorization failed due to insufficient permissions", issue="PERMISSION_DENIED")
                             return _public(copy.deepcopy(refund))
         raise PayPalError(404, "RESOURCE_NOT_FOUND", "Refund not found", issue="INVALID_RESOURCE_ID")
 

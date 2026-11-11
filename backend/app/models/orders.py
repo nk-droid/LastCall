@@ -140,6 +140,9 @@ class SupportRequest(Base):
     ai_draft: Mapped[str] = mapped_column(Text, default="")
     ai_draft_source: Mapped[str] = mapped_column(String(20), default="rules")
     ai_invocation_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    ai_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # What the drafting agent checked with PayPal: [{"label": "Refund", "value": "On its way · $10.25 · Nov 8, 9:02 AM"}]
+    ai_checks: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="open")
     staff_reply: Mapped[str | None] = mapped_column(Text, nullable=True)
     replied_by: Mapped[str | None] = mapped_column(String(80), nullable=True)

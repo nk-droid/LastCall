@@ -29,8 +29,9 @@ const KINDS = [
   { key: "concierge", label: "Concierge" },
   { key: "watch_match", label: "Watch" },
   { key: "closeout", label: "Close-out" },
+  { key: "support", label: "Support" },
 ];
-const KIND_LABEL: Record<string, string> = { concierge: "Concierge", watch_match: "Watch match", closeout: "Close-out" };
+const KIND_LABEL: Record<string, string> = { concierge: "Concierge", watch_match: "Watch match", closeout: "Close-out", support: "Support reply" };
 const RUN_TONE: Record<string, Tone> = { done: "success", running: "info", fallback: "neutral", step_limit: "warning", timeout: "warning", error: "danger" };
 
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;

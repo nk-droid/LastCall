@@ -1,10 +1,10 @@
 "use client";
 
-// The shop's AI teammates, one at a time: a list of the three assistants (each with what it did today and
+// The shop's AI teammates, one at a time: a list of the four assistants (each with what it did today and
 // whether it's on) and the selected one's details: its switch, its rules, what it did this week, and what came
 // of it. The selection lives in the URL (?a=ask), so a link can open a specific assistant.
 
-import { ArrowForwardRounded, ForumRounded, NotificationsActiveRounded, ScheduleRounded, VerifiedUserRounded } from "@mui/icons-material";
+import { ArrowForwardRounded, ForumRounded, NotificationsActiveRounded, ScheduleRounded, SupportAgentRounded, VerifiedUserRounded } from "@mui/icons-material";
 import {
   Alert, Box, Button, Link, Stack, Switch, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, Typography,
 } from "@mui/material";
@@ -21,7 +21,7 @@ import type { CloseoutAction, CloseoutState } from "@/lib/types";
 import { useResource, useSecondsUntil, type Resource } from "@/lib/use-api";
 
 type FeedItem = {
-  id: string; kind: "closeout" | "concierge" | "concierge_skip" | "watch"; at: string; day: string; time_label: string;
+  id: string; kind: "closeout" | "concierge" | "concierge_skip" | "watch" | "support"; at: string; day: string; time_label: string;
   title: string; detail: string; status: { tone: Tone; label: string } | null; action: "review" | null;
 };
 type Activity = {
@@ -30,6 +30,7 @@ type Activity = {
     closeout: { enabled: boolean; status: string | null; waiting: boolean; runs_at_label: string | null };
     concierge: { listed: boolean; suggested_today: number; suggested_week: number; ordered_week: number };
     watch: { alerts_today: number; alerts_week: number; watching: number; opened_week: number; ordered_week: number };
+    support: { drafted_today: number; drafted_week: number; checked_paypal_week: number; waiting: number; sent_as_drafted_week: number };
   };
   feed: FeedItem[];
   gaps: { label: string; count: number }[];
@@ -37,8 +38,8 @@ type Activity = {
   can_edit: boolean;
 };
 
-type Key = "closeout" | "ask" | "watch";
-const KEYS: Key[] = ["closeout", "ask", "watch"];
+type Key = "closeout" | "ask" | "watch" | "support";
+const KEYS: Key[] = ["closeout", "ask", "watch", "support"];
 const list = { listStyle: "none", m: 0, p: 0 } as const;
 
 export function Assistant() {
@@ -73,7 +74,7 @@ export function Assistant() {
           </Stack>
           <Box role="tabpanel" id={`assistant-panel-${selected}`} aria-labelledby={`assistant-tab-${selected}`} sx={{ flex: "3 1 600px", minWidth: 0 }}>
             {selected === "closeout" ? <CloseoutDetail a={a} closeout={closeout} onChanged={reload} />
-              : selected === "ask" ? <AskDetail a={a} onChanged={reload} /> : <WatchDetail a={a} />}
+              : selected === "ask" ? <AskDetail a={a} onChanged={reload} /> : selected === "watch" ? <WatchDetail a={a} /> : <SupportDetail a={a} />}
           </Box>
         </Box>
       )}
@@ -84,7 +85,7 @@ export function Assistant() {
 // ----------------------------------------------------------------------------- the list
 
 function AssistantTabs({ a, selected, onSelect }: { a: Activity; selected: Key; onSelect: (key: Key) => void }) {
-  const { closeout: co, concierge: cc, watch: w } = a.teammates;
+  const { closeout: co, concierge: cc, watch: w, support: sp } = a.teammates;
   const tabs: { key: Key; icon: ReactNode; tone: Tone; name: string; status: string; statusTone?: Tone; state: string }[] = [
     {
       key: "closeout", icon: <ScheduleRounded />, tone: "warning", name: "Close-out", state: co.enabled ? "On" : "Off",
@@ -100,6 +101,11 @@ function AssistantTabs({ a, selected, onSelect }: { a: Activity; selected: Key; 
     {
       key: "watch", icon: <NotificationsActiveRounded />, tone: "info", name: "Watch alerts", state: "On",
       status: `${plural(w.alerts_today, "alert")} today · ${w.watching} watching`,
+    },
+    {
+      key: "support", icon: <SupportAgentRounded />, tone: "neutral", name: "Support replies", state: "On",
+      statusTone: sp.waiting ? "warning" : undefined,
+      status: sp.waiting ? `${plural(sp.waiting, "reply", "replies")} waiting for you` : `${plural(sp.drafted_today, "draft")} today`,
     },
   ];
   return (
@@ -396,6 +402,23 @@ function AskDetail({ a, onChanged }: { a: Activity; onChanged: () => void }) {
           </Box>
         )}
       </Section>
+    </Panel>
+  );
+}
+
+function SupportDetail({ a }: { a: Activity }) {
+  const sp = a.teammates.support;
+  const items = a.feed.filter((i) => i.kind === "support").slice(0, 8);
+  return (
+    <Panel icon={<SupportAgentRounded />} tone="neutral" title="Support replies"
+      description="Drafts a reply when a customer messages about an order, checking the payment and any refund with PayPal first."
+      control={<StatusChip tone="neutral" label="Always on" />}>
+      <Facts items={[`${plural(sp.drafted_today, "draft")} today`, `${sp.drafted_week} this week`, `${sp.checked_paypal_week} checked with PayPal`,
+        `${sp.sent_as_drafted_week} sent as drafted`]} />
+      <Section title="Recent">
+        <ActivityList items={items} today={a.today} empty="No customer messages this week." />
+      </Section>
+      <Typography variant="body2" color="text.secondary">Staff review every draft before it&apos;s sent. Drafts can&apos;t refund, cancel or change an order.</Typography>
     </Panel>
   );
 }
