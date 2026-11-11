@@ -33,10 +33,22 @@ from app.observability import metrics, redact_obj
 log = logging.getLogger(__name__)
 
 
+RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
+
+
 class ProviderFailure(Exception):
-    def __init__(self, kind: str, message: str):
+    def __init__(self, kind: str, message: str, *, status: int | None = None, retryable: bool | None = None):
         super().__init__(message)
         self.kind = kind  # timeout | unavailable | http_error | refusal
+        self.status = status
+        self._retryable = retryable
+
+    @property
+    def retryable(self) -> bool:
+        """A slow or briefly unavailable model is worth one more try; a rejected request (bad key, no credit) is not."""
+        if self._retryable is not None:
+            return self._retryable
+        return self.kind in ("timeout", "unavailable") or (self.kind == "http_error" and self.status in RETRYABLE_STATUS)
 
 
 @dataclass
@@ -115,7 +127,7 @@ class OllamaProvider:
         except httpx.TimeoutException as exc:
             raise ProviderFailure("timeout", f"model call timed out after {timeout:.1f}s") from exc
         except ResponseError as exc:
-            raise ProviderFailure("http_error", f"Ollama returned {exc.status_code}: {str(exc.error)[:200]}") from exc
+            raise ProviderFailure("http_error", f"Ollama returned {exc.status_code}: {str(exc.error)[:200]}", status=exc.status_code) from exc
         except (ConnectionError, httpx.HTTPError) as exc:
             raise ProviderFailure("unavailable", f"Ollama unreachable at {self.host}: {exc.__class__.__name__}") from exc
         usage = reply.usage_metadata or {}
@@ -129,7 +141,7 @@ class OllamaProvider:
         except httpx.TimeoutException as exc:
             raise ProviderFailure("timeout", f"model call timed out after {timeout:.1f}s") from exc
         except ResponseError as exc:
-            raise ProviderFailure("http_error", f"Ollama returned {exc.status_code}: {str(exc.error)[:200]}") from exc
+            raise ProviderFailure("http_error", f"Ollama returned {exc.status_code}: {str(exc.error)[:200]}", status=exc.status_code) from exc
         except (ConnectionError, httpx.HTTPError) as exc:
             raise ProviderFailure("unavailable", f"Ollama unreachable at {self.host}: {exc.__class__.__name__}") from exc
         usage = getattr(reply, "usage_metadata", None) or {}
@@ -169,7 +181,7 @@ class FixtureProvider:
         self.calls.append({"task": task, "messages": messages})
         queue = self.replies.get(task) or []
         if not queue:
-            raise ProviderFailure("unavailable", f"no fixture reply queued for {task}")
+            raise ProviderFailure("unavailable", f"no fixture reply queued for {task}", retryable=False)
         reply = queue.pop(0)
         if isinstance(reply, Exception):
             raise reply
@@ -183,7 +195,7 @@ class FixtureProvider:
         self.calls.append({"task": task, "messages": list(messages), "tools": [t["function"]["name"] for t in tools], "think": think})
         queue = self.replies.get(task) or []
         if not queue:
-            raise ProviderFailure("unavailable", f"no fixture reply queued for {task}")
+            raise ProviderFailure("unavailable", f"no fixture reply queued for {task}", retryable=False)
         reply = queue.pop(0)
         if callable(reply):
             reply = reply(messages)

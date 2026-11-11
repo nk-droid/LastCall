@@ -147,13 +147,26 @@ def test_with_ai_disabled_the_run_falls_back_immediately():
     assert _run_row(result.run_id).status == "fallback"
 
 
-def test_a_model_outage_ends_the_run_with_its_reason(fixture_llm):
-    fixture_llm.queue(TASK, ProviderFailure("timeout", "model call timed out after 30s"))
+def test_a_model_outage_ends_the_run_with_its_reason_after_one_retry(fixture_llm):
+    fixture_llm.queue(TASK, ProviderFailure("timeout", "model call timed out after 30s"), ProviderFailure("timeout", "model call timed out after 15s"))
     result = _run(tools=_tools())
-    assert result.status == "timeout"
+    assert result.status == "timeout" and result.error == "model call timed out after 15s"
     with transaction() as db:
-        turn = db.scalars(select(AIInvocation).where(AIInvocation.agent_run_id == result.run_id)).one()
-    assert turn.validation_result == "timeout" and turn.fallback_used
+        turns = db.scalars(select(AIInvocation).where(AIInvocation.agent_run_id == result.run_id)).all()
+    assert [(t.validation_result, t.fallback_used) for t in turns] == [("timeout", True), ("timeout", True)]
+
+
+def test_a_slow_turn_is_retried_once_and_the_run_carries_on(fixture_llm):
+    fixture_llm.queue(TASK, ProviderFailure("timeout", "model call timed out after 30s"), call("add", a=2, b=3), call("answer", value=5))
+    result = _run(tools=_tools())
+    assert result.ok and result.final.value == 5
+
+
+def test_a_rejected_model_call_is_not_retried(fixture_llm):
+    fixture_llm.queue(TASK, ProviderFailure("http_error", "Ollama returned 402: add credits", status=402), call("answer", value=1))
+    result = _run(tools=_tools())
+    assert result.status == "error" and "402" in result.error
+    assert len(fixture_llm.replies[TASK]) == 1  # the queued answer was never asked for
 
 
 def test_a_tool_call_written_as_json_text_is_still_run(fixture_llm):
@@ -274,7 +287,7 @@ def test_ops_places_model_turns_and_tool_calls_on_the_run_timeline(fixture_llm, 
     assert (first["input_tokens"], first["output_tokens"], first["result"]) == (10, 10, "valid")
 
     listing = ok(admin.get(f"/api/ops/agent-runs?kind={TASK}"))
-    assert [len(r["turns"]) for r in listing["runs"]] == [1, 2]
+    assert [len(r["turns"]) for r in listing["runs"]] == [2, 2]  # newest first: a timed-out turn and its retry, then the two-turn run
     stats = listing["stats"]
     assert (stats["runs"], stats["failed"], stats["input_tokens"]) == (2, 1, 20)
     assert stats["median_ms"] >= 0
