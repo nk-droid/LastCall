@@ -21,7 +21,7 @@ from app.models import Order, PaymentAttempt, Refund, WebhookEvent
 from app.observability import metrics
 from app.payments import get_client
 from app.payments.base import PayPalOutcomeUnknown
-from app.services import checkout, jobs, refunds
+from app.services import checkout, fees, jobs, refunds
 from app.services.alerts import raise_alert
 
 log = logging.getLogger(__name__)
@@ -105,7 +105,9 @@ def process(webhook_event_id: str) -> dict[str, Any]:
         if attempt is not None and event_type in ("PAYMENT.CAPTURE.REFUNDED", "PAYMENT.CAPTURE.REVERSED"):
             pending_refunds = [r.id for r in db.scalars(select(Refund).where(Refund.payment_attempt_id == attempt.id,
                                                                             Refund.state.in_(["REQUESTED", "PENDING", "OUTCOME_UNKNOWN"]))).all()]
-    if attempt_id is None:
+    if event_type.startswith("INVOICING.INVOICE."):
+        result = "fee_invoice:" + fees.on_webhook(resource.get("id"))
+    elif attempt_id is None:
         result = "unmatched"
     elif event_type in ("PAYMENT.CAPTURE.COMPLETED", "PAYMENT.CAPTURE.PENDING", "PAYMENT.CAPTURE.DENIED", "PAYMENT.CAPTURE.DECLINED",
                         "CHECKOUT.ORDER.COMPLETED", "CHECKOUT.ORDER.APPROVED"):

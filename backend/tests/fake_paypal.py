@@ -63,6 +63,7 @@ class FakePayPal:
         self.invalid_payees: set[str] = set()  # payee merchant IDs / emails PayPal would reject
         self.assertions: list[str | None] = []  # PayPal-Auth-Assertion values seen on refunds
         self.logins: dict[str, dict[str, Any]] = {}  # Log in with PayPal: authorization code -> the account that signed in
+        self.invoices: dict[str, dict[str, Any]] = {}  # Invoicing v2: LastCall's fee invoices to shops
         self._lock = threading.RLock()
 
     # ------------------------------------------------------------------ the buyer, in PayPal's window
@@ -217,6 +218,55 @@ class FakePayPal:
                                 raise PayPalError(403, "NOT_AUTHORIZED", "Authorization failed due to insufficient permissions", issue="PERMISSION_DENIED")
                             return _public(copy.deepcopy(refund))
         raise PayPalError(404, "RESOURCE_NOT_FOUND", "Refund not found", issue="INVALID_RESOURCE_ID")
+
+    # ------------------------------------------------------------------ Invoicing v2
+
+    def create_invoice(self, body: dict[str, Any], request_id: str) -> dict[str, Any]:
+        with self._lock:
+            if (replay := self._replay(request_id, "create_invoice")) is not None:
+                return replay
+            number = body["detail"]["invoice_number"]
+            if any(i["detail"]["invoice_number"] == number for i in self.invoices.values()):
+                raise PayPalError(422, "UNPROCESSABLE_ENTITY", "Invoice number already exists", issue="DUPLICATE_INVOICE_NUMBER")
+            cur = body["detail"]["currency_code"]
+            items = sum(Decimal(i["unit_amount"]["value"]) * Decimal(i["quantity"]) for i in body["items"])
+            discount = Decimal((((body.get("amount") or {}).get("breakdown") or {}).get("discount") or {}).get("invoice_discount", {}).get("amount", {}).get("value", "0"))
+            total = f"{items - discount:.2f}"
+            invoice = {"id": _pid("INV2-"), "status": "DRAFT", "detail": {**body["detail"], "metadata": {}}, "invoicer": body.get("invoicer", {}),
+                       "primary_recipients": body["primary_recipients"], "items": body["items"],
+                       "amount": {"currency_code": cur, "value": total}, "due_amount": {"currency_code": cur, "value": total}}
+            self.invoices[invoice["id"]] = invoice
+            return self._remember(request_id, "create_invoice", invoice)
+
+    def send_invoice(self, invoice_id: str, request_id: str) -> dict[str, Any]:
+        with self._lock:
+            if (replay := self._replay(request_id, "send_invoice")) is not None:
+                return replay
+            invoice = self._invoice(invoice_id)
+            invoice["status"] = "SENT"
+            invoice["detail"]["metadata"]["recipient_view_url"] = f"https://www.sandbox.paypal.com/invoice/p/#{invoice_id}"
+            return self._remember(request_id, "send_invoice", {"rel": "payer-view", "method": "GET", "href": invoice["detail"]["metadata"]["recipient_view_url"]})
+
+    def get_invoice(self, invoice_id: str) -> dict[str, Any]:
+        with self._lock:
+            return _public(copy.deepcopy(self._invoice(invoice_id)))
+
+    def pay_invoice(self, invoice_id: str) -> None:
+        """Play the shop paying LastCall's invoice in PayPal; PayPal then sends INVOICING.INVOICE.PAID."""
+        with self._lock:
+            invoice = self._invoice(invoice_id)
+            invoice["status"] = "PAID"
+            self.outbox.append({"id": "WH-" + _pid("")[:12], "event_version": "1.0", "create_time": _now(), "resource_type": "invoices",
+                                "event_type": "INVOICING.INVOICE.PAID", "summary": "Invoice paid (test)", "resource": {"id": invoice_id, "status": "PAID"}})
+
+    def cancel_invoice(self, invoice_id: str) -> None:
+        with self._lock:
+            self._invoice(invoice_id)["status"] = "CANCELLED"
+
+    def _invoice(self, invoice_id: str) -> dict[str, Any]:
+        if invoice_id not in self.invoices:
+            raise PayPalError(404, "RESOURCE_NOT_FOUND", "Invoice not found", issue="INVALID_RESOURCE_ID")
+        return self.invoices[invoice_id]
 
     # ------------------------------------------------------------------ Log in with PayPal
 

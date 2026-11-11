@@ -38,6 +38,7 @@ import { useAnnounce } from "@/components/announcer";
 import { useConfig } from "@/components/config";
 import { TimelineToggle, WeekHoursTimeline, type TimelineView } from "@/components/pickup-timeline";
 import { CLOSED_BY_MERCHANT, slotStatus, splitLabel } from "@/components/slot-status";
+import { InvoiceStatus } from "@/components/commerce";
 import { InfoTip, StatusChip, brand, surface, tones } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { hhmmLabel, money, plural } from "@/lib/format";
@@ -832,7 +833,36 @@ export function PayoutsSection({ settings, draft, setDraft, onSaved, onSettings 
               )}
             </Row>
           </Group>
-          <Group title="Tax and fees">
+          <Group title="LastCall fee">
+            <Row label={settings.fees.terms.label} help="No listing or monthly fees, and shoppers pay nothing extra. Refunded orders aren't charged.">
+              <Typography sx={{ fontWeight: 650 }} className="tabular">
+                {money(settings.fees.week.fee_minor)} this week{settings.fees.week.orders ? ` · ${plural(settings.fees.week.orders, "order")}` : ""}
+              </Typography>
+            </Row>
+            <Row label="Invoices" help={`Each Monday, PayPal sends an invoice for the week's fees to ${settings.fees.recipient || "the shop owner"}.`} stacked={settings.fees.invoices.length > 0}>
+              {settings.fees.invoices.length ? (
+                <Stack component="ul" spacing={1} sx={{ listStyle: "none", m: 0, p: 0, width: "100%" }}>
+                  {settings.fees.invoices.map((i) => (
+                    <Stack component="li" key={i.id} direction="row" spacing={1.5} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
+                      <Typography variant="body2" className="tabular" sx={{ fontWeight: 650, minWidth: 64 }}>{money(i.amount_minor, i.currency)}</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ flex: 1, minWidth: 140 }}>
+                        {i.period_label} · {plural(i.orders, "order")}{i.credit_minor ? ` · ${money(i.credit_minor, i.currency)} credit` : ""}
+                      </Typography>
+                      <InvoiceStatus invoice={i} />
+                      {i.payer_url && !["PAID", "MARKED_AS_PAID", "CANCELLED"].includes(i.status) && owner ? (
+                        <Button size="small" variant="outlined" color="inherit" href={i.payer_url} target="_blank" rel="noopener noreferrer">Pay in PayPal</Button>
+                      ) : null}
+                    </Stack>
+                  ))}
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  {settings.fees.next_invoice_minor ? `${money(settings.fees.next_invoice_minor)} on your first invoice` : "None yet"}
+                </Typography>
+              )}
+            </Row>
+          </Group>
+          <Group title="Tax and your service fee">
             <Row label="Sales tax" help="Many states don't tax bakery food" was={was("tax_percent", MONEY_FIELDS[0].show)}>
               <NumberInput label="Sales tax" value={v.tax_percent} onChange={(tax_percent) => setDraft({ ...v, tax_percent })} unit="%"
                 min={0} max={30} step={0.125} disabled={!owner} error={f.tax_rates_bps} />

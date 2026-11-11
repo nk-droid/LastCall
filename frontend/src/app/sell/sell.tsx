@@ -51,7 +51,8 @@ export function Sell() {
             ))}
           </Stack>
           <Alert severity="info" icon={<CheckCircleRounded />} sx={{ mt: 3 }}>
-            No listing fees. Strict allergy requests only ever see items you&apos;ve verified.
+            No listing or monthly fees: LastCall keeps 10% of each order&apos;s items (min $0.25), billed weekly through PayPal.
+            Strict allergy requests only ever see items you&apos;ve verified.
           </Alert>
         </Grid>
         <Grid size={{ xs: 12, md: 7 }}>

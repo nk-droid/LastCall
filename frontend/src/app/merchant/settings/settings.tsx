@@ -131,7 +131,7 @@ function summary(key: SectionKey, s: ShopSettings): { status: string; tone?: Ton
     }
     case "payouts": {
       const connected = s.payouts.status === "connected";
-      return { status: `${connected ? "PayPal connected" : "PayPal not connected"} · ${p.fees_minor ? `${money(p.fees_minor)} fee` : "no fees"}`, tone: connected ? undefined : "warning" };
+      return { status: `${connected ? "PayPal connected" : "PayPal not connected"} · ${p.fees_minor ? `${money(p.fees_minor)} service fee` : "no service fee"}`, tone: connected ? undefined : "warning" };
     }
   }
 }

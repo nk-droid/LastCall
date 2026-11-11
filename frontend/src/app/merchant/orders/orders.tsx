@@ -295,6 +295,13 @@ function OrderDetailPanel({ orderId, onChanged }: { orderId: string; onChanged: 
           <Typography variant="body2" color="text.secondary" className="tabular">
             Pickup {d.pickup_label} · {paid ? "paid via PayPal" : "payment not verified"} · {money(d.amount_minor, d.currency)}
           </Typography>
+          {d.platform_fee ? (
+            <Typography variant="body2" color="text.secondary" className="tabular">
+              LastCall fee {money(d.platform_fee.fee_minor, d.platform_fee.currency)} · you keep{" "}
+              <Box component="span" sx={{ fontWeight: 700, color: "text.primary" }}>{money(d.platform_fee.net_minor, d.platform_fee.currency)}</Box>
+              {d.platform_fee.billed ? " · invoiced" : ""}
+            </Typography>
+          ) : null}
         </Box>
         <StatusChip tone={status.tone} icon={status.icon} label={status.label} size="medium" />
       </Stack>

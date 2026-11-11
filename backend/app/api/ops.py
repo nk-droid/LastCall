@@ -19,7 +19,7 @@ from app.db import transaction
 from app.errors import Forbidden, NotFound
 from app.models import AgentRun, AgentStep, AIInvocation, AuditEvent, EmailMessage, Job, Merchant, Order, PaymentAttempt, SystemState
 from app.payments import faults
-from app.services import checkout, jobs, overview, shops, webhooks
+from app.services import checkout, fees, jobs, overview, shops, webhooks
 from app.services.accounts import SessionUser
 
 router = APIRouter(prefix="/api/ops", tags=["ops"])
@@ -81,6 +81,18 @@ def status(admin: SessionUser = Depends(platform_admin)) -> dict[str, Any]:
             "worker": heartbeat.value if heartbeat else None, "paypal": connection.value if connection else None,
             "jobs_dead": dead_jobs, "faults_enabled": settings().ops_faults_enabled, "as_of": clock.iso(clock.now()),
         }
+
+
+@router.get("/fees")
+def platform_fees(admin: SessionUser = Depends(platform_admin)) -> dict[str, Any]:
+    """LastCall's revenue: fees earned, billed by PayPal invoice and paid."""
+    return fees.platform_view()
+
+
+@router.post("/fees/invoice-now")
+def invoice_now(admin: SessionUser = Depends(platform_admin)) -> dict[str, Any]:
+    """Bill every shop for all fees due so far, without waiting for the weekly run."""
+    return {"results": fees.bill_all(until=clock.now() + timedelta(seconds=1), actor=f"admin:{admin.email}"), **fees.platform_view()}
 
 
 @router.post("/paypal/check")

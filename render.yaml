@@ -55,6 +55,10 @@ services:
         sync: false
       - key: PAYPAL_CONNECT_ENABLED # "true" once Log in with PayPal is on in the PayPal app (return URL <PUBLIC_APP_URL>/merchant/paypal/return)
         value: "false"
+      - key: PLATFORM_FEE_BPS # LastCall's commission: 10% of each paid order's items, billed weekly by PayPal invoice
+        value: "1000"
+      - key: PLATFORM_FEE_MIN_MINOR # at least $0.25 per order
+        value: "25"
       - key: OLLAMA_API_KEY
         sync: false
 

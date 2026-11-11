@@ -24,7 +24,7 @@ from app.errors import Conflict, NotFound, Unprocessable
 from app.ids import new_id
 from app.models import Membership, Merchant, Product, User, UserSession
 from app.payments.payee import display as payee_display
-from app.services import audit, mail, pickup
+from app.services import audit, fees, mail, pickup
 from app.services.access import StaffContext, has_role, require_role
 from app.services.accounts import SessionUser, account_view
 
@@ -201,6 +201,7 @@ def shop_view(db: Session, merchant: Merchant, role: str | None = None) -> dict[
         "pickup": merchant.pickup_config,
         "pickup_paused": merchant.pickup_paused,
         "payouts": payee_display(merchant.paypal or {}),
+        "fees": fees.shop_view(db, merchant),
         "policies": merchant.policies,
         "policy_version": merchant.policy_version,
         "checklist": items,
