@@ -15,7 +15,8 @@ into its own PayPal business account.
 | **AI where language is the problem** | The model reads the shopper's request, ranks and explains bundles, explains substitutions and drafts product copy. Every output is schema-validated and cross-checked: it can add exclusions but never remove them, can't raise a budget, and can't state allergen safety, prices or urgency. |
 | **Agents with tools, not authority** | Four tool-calling agents: **Ask LastCall** compares shops through the bundle engine, **Close-out** drafts price and slot changes a manager approves, **Watch alerts** picks which new bundle to email a waiting shopper, and **Support replies** checks the payment and any refund with PayPal before drafting an answer for staff. Tools wrap existing checks, a slow model turn is retried once, every agent falls back to plain rules, and each run, tool call and model turn is traced in Platform ops. |
 | **Code where money and safety are** | Prices, stock, dietary eligibility, pickup capacity, totals and every PayPal amount are deterministic. Strict allergies fail closed: only items the shop verified, with no listed cross-contact. |
-| **PayPal end to end** | Shops connect their payout account by signing in with PayPal (Log in with PayPal) or by merchant ID, checked with PayPal before saving. Orders v2 checkout from the server's own quote, server-side capture, per-shop payees, refunds and live payment lookups via Payments v2 with `PayPal-Auth-Assertion`, verified and de-duplicated webhooks, and reconciliation of lost responses without double charging. |
+| **PayPal end to end** | Shops connect their payout account by signing in with PayPal (Log in with PayPal) or by merchant ID, checked with PayPal before saving. Orders v2 checkout from the server's own quote, server-side capture, per-shop payees, refunds and live payment lookups via Payments v2 with `PayPal-Auth-Assertion`, LastCall's fees billed with Invoicing v2, verified and de-duplicated webhooks, and reconciliation of lost responses without double charging. |
+| **Revenue model** | Shoppers pay the shop's price and nothing more, straight to the shop's PayPal account. LastCall keeps **10% of each paid order's items (min $0.25)**: recorded when PayPal confirms the capture, reduced by refunds (waived on a full refund), and billed to each shop every Monday with a **PayPal invoice** (Invoicing v2) it pays in PayPal. No listing or monthly fees. Shops see the fee and what they keep on every order and their invoices in Payouts; **Platform ops → Revenue** shows fees earned, billed and paid. |
 | **Honest commerce** | No fake urgency, savings only against a shop's documented regular price, and every changed basket needs the shopper's explicit approval. |
 
 ## Try it
@@ -65,6 +66,7 @@ flowchart LR
 | Intent parsing (L1), bundles (L2), substitutions (L3) | `services/intent.py`, `feasibility.py`, `recommendation.py`, `substitution.py` |
 | Quotes and holds | `services/quotes.py`, `reservations.py`, `holds.py` |
 | Checkout, capture, reconciliation, webhooks, refunds | `services/checkout.py`, `webhooks.py`, `refunds.py` |
+| LastCall's fees and weekly PayPal invoices | `services/fees.py`, `models/fees.py` |
 | Fulfillment, product copy (L4) | `services/fulfillment.py`, `orders.py`, `copywriter.py` |
 | Agents: Ask LastCall (A1), Watch alerts (A2), Close-out (A3), Support replies (A4) | `services/concierge.py`, `watches.py`, `closeout.py`, `support.py` |
 | LLM adapter and agent loop (versioned prompts, validation, tool calls, retries, traces) | `backend/app/ai/` |
@@ -107,7 +109,7 @@ Staff accounts are `<shop>.<role>@example.com`, e.g. `nightowl.manager@example.c
 ## Tests
 
 ```bash
-cd backend && uv run pytest                 # 248 tests on a real PostgreSQL (acceptance tests AT-01…AT-15)
+cd backend && uv run pytest                 # 255 tests on a real PostgreSQL (acceptance tests AT-01…AT-15)
 cd frontend && npm run lint && npm run typecheck && npm run build
 cd frontend && E2E_SHOWCASE_PASSWORD=<SHOWCASE_PASSWORD> npx playwright test   # real PayPal Sandbox payment, axe WCAG 2.2 AA scans
 ```
@@ -141,7 +143,7 @@ SHOWCASE_PASSWORD=... .venv/bin/python -m app.cli seed-showcase      # also atta
 .venv/bin/python -m app.cli create-admin --email you@example.com
 ```
 
-Finally add a webhook in the PayPal app for `https://<lastcall-api>.onrender.com/api/webhooks/paypal` (events `CHECKOUT.ORDER.APPROVED`, `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.PENDING`, `PAYMENT.CAPTURE.DENIED`, `PAYMENT.CAPTURE.REFUNDED`, `PAYMENT.CAPTURE.REVERSED`) and set its ID as `PAYPAL_WEBHOOK_ID`. For **Connect with PayPal**, turn on *Log in with PayPal* in the same app with the email and PayPal account ID (payer ID) / verification attributes, add `https://<lastcall-web>/merchant/paypal/return` as a return URL, and set `PAYPAL_CONNECT_ENABLED=true` (without it, owners enter their merchant ID). Optional: `SMTP_*` for receipts, invites and resets; `SHOWCASE_PAYEE_<SLUG>` to pay each showcase shop's own Sandbox business account.
+Finally add a webhook in the PayPal app for `https://<lastcall-api>.onrender.com/api/webhooks/paypal` (events `CHECKOUT.ORDER.APPROVED`, `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.PENDING`, `PAYMENT.CAPTURE.DENIED`, `PAYMENT.CAPTURE.REFUNDED`, `PAYMENT.CAPTURE.REVERSED`, `INVOICING.INVOICE.PAID`, `INVOICING.INVOICE.CANCELLED`) and set its ID as `PAYPAL_WEBHOOK_ID`. For **Connect with PayPal**, turn on *Log in with PayPal* in the same app with the email and PayPal account ID (payer ID) / verification attributes, add `https://<lastcall-web>/merchant/paypal/return` as a return URL, and set `PAYPAL_CONNECT_ENABLED=true` (without it, owners enter their merchant ID). Optional: `PLATFORM_FEE_BPS` / `PLATFORM_FEE_MIN_MINOR` to change the commission (default 1000 = 10%, 25 = $0.25; each order keeps the terms it was paid under); `SMTP_*` for receipts, invites and resets; `SHOWCASE_PAYEE_<SLUG>` to pay each showcase shop's own Sandbox business account.
 
 Operations: `GET /api/health` (database, migrations, worker heartbeat, PayPal), `GET /api/metrics` (Prometheus, bearer `METRICS_TOKEN`), JSON logs with correlation IDs, and **Platform ops** for payments, webhooks, AI calls, jobs, email, traces and the audit log.
 
@@ -149,6 +151,7 @@ Operations: `GET /api/health` (database, migrations, worker heartbeat, PayPal), 
 
 * PayPal runs in the Sandbox; the API host is fixed so test credentials can never move real money.
 * Pickup only, one shop per basket, USD.
+* Fees are invoiced weekly rather than split off at checkout: taking a platform fee inside the payment needs PayPal partner onboarding.
 * Rate limits are per API instance; sign-in lockout is stored in the database.
 * Before selling real food: local food-sale, labelling, allergen and consumer-protection review.
 
