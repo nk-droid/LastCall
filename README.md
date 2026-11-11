@@ -111,7 +111,7 @@ Staff accounts are `<shop>.<role>@example.com`, e.g. `nightowl.manager@example.c
 ## Tests
 
 ```bash
-cd backend && uv run pytest                 # 258 tests on a real PostgreSQL (acceptance tests AT-01…AT-15)
+cd backend && uv run pytest                 # 260 tests on a real PostgreSQL (acceptance tests AT-01…AT-15)
 cd frontend && npm run lint && npm run typecheck && npm run build
 cd frontend && E2E_SHOWCASE_PASSWORD=<SHOWCASE_PASSWORD> npx playwright test   # real PayPal Sandbox payment, axe WCAG 2.2 AA scans
 ```

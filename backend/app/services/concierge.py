@@ -233,7 +233,12 @@ def _find_everywhere(ctx, args: SearchArgs) -> dict[str, Any]:
         shops.append({**result, "options": result["options"][:OPTIONS_PER_SHOP]})
     if not shops:
         return {"shops": [], "note": "No shop is taking pickups today."}
-    return {"shops": shops}
+
+    def coverage(shop: dict[str, Any]) -> float:  # how well the shop's best option feeds everyone (1.0 = enough for all)
+        return max((min(o["servings"] / args.party_size, 1.0) for o in shop.get("options", [])), default=-1.0)
+
+    # Best fits first: the model tends to pick from the top, so a shop that can feed the whole party leads.
+    return {"shops": sorted(shops, key=coverage, reverse=True)}
 
 
 def _search(state: dict[str, Any], session_id: str, slug: str, args: FindBundlesArgs | None) -> dict[str, Any]:
@@ -611,8 +616,9 @@ def _rules_reply(state: dict[str, Any], session_id: str) -> dict[str, Any]:
 def _reply(text: str, cards: list[dict[str, Any]], questions: list[str], state: dict[str, Any], *, source: str) -> dict[str, Any]:
     allowed = {format_money(c["total_minor"], c["currency"]).replace(" ", "") for c in cards}
     plain = re.sub(r"[*_`#>]+", "", text or "").replace("\n", " ")
-    # A message that lists option ids is the model narrating its tool results; the cards already show them.
-    clean = "" if OPTION_ID.search(plain) else clean_customer_prose(plain, allowed_amounts=allowed, max_chars=400)
+    # A message that lists option ids or the options themselves is the model narrating its tool results; the cards show them.
+    listed = OPTION_ID.search(plain) or re.search(r"(^|\n)\s*[-•]\s", text or "")
+    clean = "" if listed else clean_customer_prose(plain, allowed_amounts=allowed, max_chars=400)
     if not clean:
         if cards:
             shops = list(dict.fromkeys(c["shop"]["name"] for c in cards))
