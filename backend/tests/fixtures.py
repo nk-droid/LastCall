@@ -47,6 +47,7 @@ def seed_bakery(slug: str = "juniper-rye", name: str = "Juniper & Rye Bakehouse"
                            "notes": item.get("notes", "")},
                 allergen_source={"verified": "merchant_verified", "needs_review": "merchant_unverified"}.get(item["status"], "missing"),
                 status="paused" if item.get("paused") else "active", per_order_limit=6, surplus_priority=item["priority"],
+                image_url=f"/api/assets/img_fixture_{item['sku'].lower()}",
             )
             db.add(product)
             db.flush()

@@ -14,7 +14,7 @@ from app.services import inventory, shops
 from .conftest import new_client
 from .factories import member_client
 from .fixtures import seed_bakery
-from .helpers import buy, ok, shop_id
+from .helpers import buy, ok, shop_id, upload_photo
 
 NEW_PRODUCT = {
     "sku": "PB-20", "name": "Pumpkin bread (slice)", "category": "cake", "flavor": "sweet", "servings_per_unit": 1, "tags": ["breakfast"],
@@ -60,7 +60,7 @@ def test_catalog_items_carry_price_allergen_and_availability_provenance(client):
     assert items["MU-03"]["allergens"]["status"] == "needs_review"
     assert items["FT-05"]["availability"]["status"] == "low"
     assert "RY-13" not in items  # paused listing hidden from shoppers
-    assert croissant["image"] == {"url": None, "alt": "Butter croissant (no photo yet)"}
+    assert croissant["image"] == {"url": "/api/assets/img_fixture_cr-01", "alt": "Photo of Butter croissant"}
 
 
 def test_pickup_slots_follow_each_days_window(client, app):
@@ -126,18 +126,19 @@ def test_manager_creates_product_and_prices_never_invent_savings(app):
     manager, _ = member_client(app, shop, "manager")
     staff, _ = member_client(app, shop, "staff")
     assert staff.post("/api/merchant/products", json=NEW_PRODUCT).status_code == 403
-    created = manager.post("/api/merchant/products", json=NEW_PRODUCT)
+    new_product = {**NEW_PRODUCT, "image_url": upload_photo(manager)}
+    created = manager.post("/api/merchant/products", json=new_product)
     assert created.status_code == 201
     row = created.json()["row"]
     assert row["available"] == 5 and row["allergens"]["verified_by"] == "Manager Person"
-    assert manager.post("/api/merchant/products", json=NEW_PRODUCT).json()["error"]["code"] == "duplicate_sku"
+    assert manager.post("/api/merchant/products", json=new_product).json()["error"]["code"] == "duplicate_sku"
     inverted = manager.post(f"/api/merchant/products/{row['product_id']}/price",
                             json={"reference_minor": 200, "sale_minor": 300, "reference_source": "Menu board"})
     assert inverted.status_code == 422 and inverted.json()["error"]["code"] == "invalid_price"
     repriced = manager.post(f"/api/merchant/products/{row['product_id']}/price",
                             json={"reference_minor": 400, "sale_minor": 200, "reference_source": "Menu board"}).json()["row"]
     assert repriced["price"]["sale_minor"] == 200
-    unknown_allergen = manager.post("/api/merchant/products", json={**NEW_PRODUCT, "sku": "PB-21",
+    unknown_allergen = manager.post("/api/merchant/products", json={**new_product, "sku": "PB-21",
                                                                     "allergens": {"contains": ["glitter"], "cross_contact": [], "status": "verified"}})
     assert unknown_allergen.status_code == 422
 

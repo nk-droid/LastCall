@@ -25,9 +25,8 @@ def main() -> None:
     admin.add_argument("--email", required=True)
     admin.add_argument("--name", default="LastCall Admin")
     seed = sub.add_parser("seed-showcase", help="Create the showcase shops (idempotent); staff accounts need SHOWCASE_PASSWORD")
-    seed.add_argument("--photos", type=Path, default=showcase.PHOTOS,
+    seed.add_argument("--photos", type=Path,
                       help="Folder of <slug>/<SKU>.jpg|png|webp photos with a credits.json (default: the bundled, openly licensed set)")
-    seed.add_argument("--no-photos", dest="photos", action="store_const", const=None, help="Don't attach photos")
     sub.add_parser("run-due", help="Run due background jobs once")
     sub.add_parser("worker", help="Run the background worker in the foreground")
     args = parser.parse_args()

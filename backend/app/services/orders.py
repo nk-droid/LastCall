@@ -19,7 +19,7 @@ from app.ai.sanitize import clean_customer_prose
 from app.db import transaction
 from app.errors import Conflict, Unprocessable
 from app.ids import new_id
-from app.models import AuditEvent, BundleQuote, Merchant, Order, PaymentAttempt, Refund, Reservation, SupportRequest
+from app.models import AuditEvent, BundleQuote, Merchant, Order, PaymentAttempt, Product, Refund, Reservation, SupportRequest
 from app.money import format_money
 from app.security import pickup_code
 from app.services import audit, jobs
@@ -95,6 +95,16 @@ def _timeline(db, order: Order) -> list[dict[str, Any]]:
     return timeline
 
 
+def _with_photos(db, lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Lines exactly as sold; one sold before its product had a photo shows the product's photo now (only the picture, never prices)."""
+    missing = {line["product_id"] for line in lines if line.get("product_id") and not (line.get("image") or {}).get("url")}
+    if not missing:
+        return lines
+    photos = dict(db.execute(select(Product.id, Product.image_url).where(Product.id.in_(missing), Product.image_url.is_not(None))).tuples().all())
+    return [{**line, "image": {"url": photos[line["product_id"]], "alt": f"Photo of {line['name']}"}} if line.get("product_id") in photos else line
+            for line in lines]
+
+
 def customer_view(db, order: Order, merchant: Merchant, now: datetime) -> dict[str, Any]:
     quote = db.get(BundleQuote, order.quote_id)
     attempt = db.scalar(select(PaymentAttempt).where(PaymentAttempt.order_id == order.id).order_by(PaymentAttempt.created_at.desc()).limit(1))
@@ -120,7 +130,7 @@ def customer_view(db, order: Order, merchant: Merchant, now: datetime) -> dict[s
         "refund_status": order.refund_status,
         "amount_minor": order.amount_minor,
         "currency": order.currency,
-        "lines": quote.item_lines if quote else [],
+        "lines": _with_photos(db, quote.item_lines) if quote else [],
         "totals": {
             "reference_minor": quote.subtotal_reference_minor, "subtotal_minor": quote.subtotal_minor, "discount_minor": quote.discount_minor,
             "tax_minor": quote.tax_minor, "fees_minor": quote.fees_minor, "total_minor": quote.amount_minor,

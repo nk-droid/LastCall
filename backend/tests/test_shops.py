@@ -10,6 +10,7 @@ from app.services import accounts, shops
 
 from .conftest import new_client
 from .factories import last_email, make_merchant, member_client, signup
+from .helpers import upload_photo
 from .test_catalog import NEW_PRODUCT
 
 PROFILE = {
@@ -70,7 +71,8 @@ def test_submit_requires_checklist_then_admin_approves(app):
                                                                 "At least one product listed with a price"}
     owner.post("/api/merchant/shop/policies/confirm")
     assert owner.put("/api/merchant/shop/payouts", json={"merchant_id": "JUNIPERRYE001"}).status_code == 200
-    assert owner.post("/api/merchant/products", json=NEW_PRODUCT).status_code == 201
+    assert owner.post("/api/merchant/products", json=NEW_PRODUCT).json()["error"]["code"] == "validation_error"  # a photo is required
+    assert owner.post("/api/merchant/products", json={**NEW_PRODUCT, "image_url": upload_photo(owner)}).status_code == 201
     submitted = owner.post("/api/merchant/shop/submit").json()
     assert submitted["shop"]["status"] == "pending_review"
     assert last_email("ops@lastcall.app", "shop_submitted").subject == "Review request: Juniper & Rye Bakehouse"
@@ -91,7 +93,7 @@ def test_reject_resubmit_suspend_reinstate(app):
     shop_id = body["shop"]["id"]
     owner.post("/api/merchant/shop/policies/confirm")
     owner.put("/api/merchant/shop/payouts", json={"merchant_id": "JUNIPERRYE001"})
-    owner.post("/api/merchant/products", json=NEW_PRODUCT)
+    owner.post("/api/merchant/products", json={**NEW_PRODUCT, "image_url": upload_photo(owner)})
     owner.post("/api/merchant/shop/submit")
     rejected = admin.post(f"/api/ops/shops/{shop_id}/reject", json={"note": "Add the allergen sheet for the muffins"}).json()
     assert rejected["shop"]["status"] == "rejected"

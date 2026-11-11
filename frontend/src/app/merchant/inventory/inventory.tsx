@@ -5,10 +5,10 @@
 // save as you go. The full editor (details, allergens, price history) opens from the pencil.
 
 import {
+  AddPhotoAlternateRounded,
   AddRounded,
   AutoAwesomeRounded,
   CheckRounded,
-  DeleteOutlineRounded,
   EditNoteRounded,
   EditRounded,
   ErrorOutlineRounded,
@@ -126,6 +126,7 @@ const panel = { ...surface.raised, p: 2.25, borderRadius: "16px" } as const;
 type Problem = { tone: Tone; label: string; icon?: Icon; fix?: { label: string; icon: Icon; tab?: TabKey; confirm?: boolean } };
 function problemOf(r: InventoryRow): Problem | null {
   if (r.status !== "active") return { tone: "neutral", label: "Paused", icon: PauseCircleRounded };
+  if (!r.image.url) return { tone: "danger", label: "No photo · hidden", icon: AddPhotoAlternateRounded, fix: { label: "Add photo", icon: AddPhotoAlternateRounded, tab: "details" } };
   if (r.allergens.status !== "verified") return { tone: "danger", label: "Allergen review", icon: HealthAndSafetyRounded, fix: { label: "Review allergens", icon: HealthAndSafetyRounded, tab: "allergens" } };
   if (r.availability_status === "unpriced") return { tone: "warning", label: "No price", icon: SellRounded, fix: { label: "Set price", icon: SellRounded, tab: "price" } };
   if (r.availability_status === "past_cutoff") return { tone: "danger", label: "Past cutoff", icon: ScheduleRounded, fix: { label: "Change cutoff", icon: ScheduleRounded, tab: "stock" } };
@@ -134,7 +135,8 @@ function problemOf(r: InventoryRow): Problem | null {
   if (r.availability_status === "low") return { tone: "info", label: "Running low", icon: TrendingDownRounded };
   return null;
 }
-const needsAttention = (r: InventoryRow) => r.status === "active" && (r.allergens.status !== "verified" || r.stale || ["unpriced", "past_cutoff"].includes(r.availability_status));
+const needsAttention = (r: InventoryRow) =>
+  r.status === "active" && (!r.image.url || r.allergens.status !== "verified" || r.stale || ["unpriced", "past_cutoff"].includes(r.availability_status));
 const runningLow = (r: InventoryRow) => r.status === "active" && ["low", "sold_out"].includes(r.availability_status);
 
 export function Inventory() {
@@ -378,7 +380,7 @@ function ItemRow({ r, manager, error, actions }: { r: Row; manager: boolean; err
     <TableRow hover sx={r.status !== "active" ? { bgcolor: brand.cream } : undefined}>
       <TableCell>
         <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-          <ProductImage image={r.image} category={r.category} size="sm" sx={{ width: 44, height: 44, flexShrink: 0 }} />
+          <ProductImage image={r.image} size="sm" sx={{ width: 44, height: 44, flexShrink: 0 }} />
           <Box sx={{ minWidth: 0 }}>
             <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
               <Typography sx={{ fontWeight: 650, fontSize: 15 }}>{r.name}</Typography>
@@ -414,7 +416,7 @@ function ItemCard({ r, manager, error, actions }: { r: Row; manager: boolean; er
   return (
     <Box component="li" sx={{ ...(r.status !== "active" ? surface.inset : surface.raisedSm), borderRadius: "16px", p: 1.75, display: "grid", gap: 1.5 }}>
       <Stack direction="row" spacing={1.5} sx={{ alignItems: "flex-start" }}>
-        <ProductImage image={r.image} category={r.category} size="sm" sx={{ width: 48, height: 48 }} />
+        <ProductImage image={r.image} size="sm" sx={{ width: 48, height: 48 }} />
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography sx={{ fontWeight: 650 }}>{r.name}</Typography>
           {problem ? <StatusChip tone={problem.tone} icon={problem.icon} label={problem.label} sx={{ mt: 0.5 }} /> : null}
@@ -1028,7 +1030,7 @@ function ItemEditor({ row, initialTab, canManage, onSaved, update }: {
                     Photo
                   </Typography>
                   <Typography variant="caption" color="text.secondary" component="p">
-                    Use a real photo of this product. Without one, shoppers see a plain placeholder, never a stock image.
+                    Use a real photo of this product. Shoppers only see products that have one.
                   </Typography>
                   <Stack direction="row" spacing={1.5} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap", mt: 1.25 }}>
                     <ProductImage image={{ ...row.image, url: details.image_url || null }} size="sm" />
@@ -1043,13 +1045,8 @@ function ItemEditor({ row, initialTab, canManage, onSaved, update }: {
                       onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
                     />
                     <Button size="small" variant="outlined" color="inherit" startIcon={<UploadRounded />} loading={busy === "upload"} disabled={locked} onClick={() => fileRef.current?.click()}>
-                      Upload photo
+                      {details.image_url ? "Replace photo" : "Upload photo"}
                     </Button>
-                    {details.image_url ? (
-                      <Button size="small" color="inherit" startIcon={<DeleteOutlineRounded />} disabled={locked} onClick={() => setDetails({ ...details, image_url: "" })}>
-                        Remove
-                      </Button>
-                    ) : null}
                   </Stack>
                 </Box>
                 <Box sx={panel}>

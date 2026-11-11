@@ -169,7 +169,11 @@ def _folder_photos(db: Session, merchant: Merchant, folder: Path) -> int:
 
 
 def seed(*, password: str | None = None, photos: Path | None = None) -> dict[str, Any]:
-    """Create any showcase shop that doesn't exist yet; attach photos to products that have none."""
+    """Create any showcase shop that doesn't exist yet; attach photos (default: the bundled set) to products that have none.
+
+    Shoppers only see products with a photo, so a showcase product without one stays hidden.
+    """
+    photos = photos or PHOTOS
     now = clock.now()
     result: dict[str, Any] = {"created": [], "existing": [], "staff": {}, "photos": 0}
     with transaction() as db:
@@ -183,6 +187,5 @@ def seed(*, password: str | None = None, photos: Path | None = None) -> dict[str
                 result["existing"].append(spec["slug"])
             if password:
                 result["staff"][spec["slug"]] = _create_staff(db, merchant, spec, password)
-            if photos:
-                result["photos"] += _folder_photos(db, merchant, photos)
+            result["photos"] += _folder_photos(db, merchant, photos)
     return result
