@@ -483,7 +483,20 @@ export type PayoutStatus = {
   status: "connected" | "not_connected"; display?: string; verified_at?: string | null; via?: "paypal" | "merchant_id"; email?: string | null;
 };
 
+/** LastCall's commission on one order, and what the shop keeps. */
+export type PlatformFee = { fee_minor: number; net_minor: number; currency: string; label: string; billed: boolean };
+export type FeeInvoice = {
+  id: string; number: string; status: string; amount_minor: number; credit_minor: number; currency: string; orders: number; period_label: string;
+  payer_url: string | null; sent_at: string | null; paid_at: string | null; shop?: string;
+};
+export type FeeTerms = { rate_bps: number; min_minor: number; label: string };
+export type ShopFees = { terms: FeeTerms; week: { orders: number; fee_minor: number }; next_invoice_minor: number; recipient: string; invoices: FeeInvoice[] };
+export type PlatformRevenue = {
+  terms: FeeTerms; week: { orders: number; fee_minor: number }; unbilled_minor: number; invoiced_open_minor: number; paid_minor: number; invoices: FeeInvoice[];
+};
+
 export type OrderDetail = OrderSummary & {
+  platform_fee: PlatformFee | null;
   customer_contact: { name?: string; email?: string | null; phone?: string | null };
   lines: (QuoteLine & { packed: boolean })[];
   totals: Totals;
@@ -602,6 +615,7 @@ export type ShopSettings = {
   pickup: { windows: Week; slot_minutes: number; capacity: number };
   pickup_paused: boolean;
   payouts: PayoutStatus;
+  fees: ShopFees;
   policies: ShopPolicies;
   policy_version: number;
   checklist: { key: "profile" | "hours" | "policies" | "payouts" | "catalog"; label: string; done: boolean }[];

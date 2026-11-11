@@ -4,10 +4,10 @@ import { HelpOutlineRounded, LocalOfferRounded, VerifiedRounded, WarningAmberRou
 import { Box, Stack, Typography } from "@mui/material";
 
 import { ALLERGEN_LABEL, money } from "@/lib/format";
-import type { Allergens, Totals } from "@/lib/types";
+import type { Allergens, FeeInvoice, Totals } from "@/lib/types";
 import { brand, tones } from "@/theme/tokens";
 
-import { StatusChip } from "./ui";
+import { StatusChip, type Tone } from "./ui";
 
 function allergen(code: string): string {
   return ALLERGEN_LABEL[code]?.toLowerCase() ?? code;
@@ -112,4 +112,13 @@ export function PriceBreakdown({ totals, currency = "USD", referenceNote }: { to
       ) : null}
     </Box>
   );
+}
+
+/** A LastCall fee invoice's PayPal status. */
+const INVOICE_TONE: Record<string, Tone> = { PAID: "success", MARKED_AS_PAID: "success", SENT: "info", UNPAID: "info", PARTIALLY_PAID: "warning",
+  SENDING: "warning", CREATING: "neutral", DRAFT: "neutral", CANCELLED: "neutral", FAILED: "danger" };
+
+export function InvoiceStatus({ invoice }: { invoice: FeeInvoice }) {
+  const label = invoice.status === "MARKED_AS_PAID" ? "Paid" : invoice.status.charAt(0) + invoice.status.slice(1).toLowerCase().replace(/_/g, " ");
+  return <StatusChip tone={INVOICE_TONE[invoice.status] ?? "neutral"} label={label} />;
 }

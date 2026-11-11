@@ -7,6 +7,7 @@ import {
   EmailRounded,
   HistoryRounded,
   PaymentsRounded,
+  ReceiptLongRounded,
   RouteRounded,
   StorefrontRounded,
   SyncRounded,
@@ -39,9 +40,10 @@ import { useAnnounce } from "@/components/announcer";
 import { Dialog } from "@/components/dialog";
 import { PageShell } from "@/components/site";
 import { EmptyState, ErrorState, FactChip, LoadingBlock, PageHeader, SectionCard, StatTile, StatusChip, type Tone } from "@/components/ui";
+import { InvoiceStatus } from "@/components/commerce";
 import { api, errorMessage } from "@/lib/api";
 import { ago, money } from "@/lib/format";
-import type { ShopSettings } from "@/lib/types";
+import type { PlatformRevenue, ShopSettings } from "@/lib/types";
 import { useResource } from "@/lib/use-api";
 
 import { AgentRuns } from "./agent-runs";
@@ -66,6 +68,7 @@ type Faults = { enabled: boolean; armed: { id: string; kind: string; remaining: 
 const TABS = [
   { key: "shops", label: "Shops", icon: StorefrontRounded },
   { key: "payments", label: "Payments", icon: PaymentsRounded },
+  { key: "revenue", label: "Revenue", icon: ReceiptLongRounded },
   { key: "webhooks", label: "Webhooks", icon: WebhookRounded },
   { key: "ai", label: "AI calls", icon: AutoAwesomeRounded },
   { key: "jobs", label: "Jobs", icon: WorkHistoryRounded },
@@ -117,6 +120,7 @@ export function Ops() {
       </Box>
       {tab === "shops" ? <ShopsTab /> : null}
       {tab === "payments" ? <PaymentsTab /> : null}
+      {tab === "revenue" ? <RevenueTab /> : null}
       {tab === "webhooks" ? <WebhooksTab /> : null}
       {tab === "ai" ? <AITab /> : null}
       {tab === "jobs" ? <JobsTab /> : null}
@@ -298,6 +302,59 @@ function PaymentsTab() {
         </DataTable>
       )}
       {trace ? <TraceDrawer traceId={trace} onClose={() => setTrace(null)} /> : null}
+    </SectionCard>
+  );
+}
+
+// ----------------------------------------------------------------------------- revenue
+
+function RevenueTab() {
+  const announce = useAnnounce();
+  const revenue = useResource((signal) => api<PlatformRevenue>("/api/ops/fees", { signal }), [], { pollMs: 30_000 });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function billNow() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api<PlatformRevenue & { results: { sent: number; failed: number } }>("/api/ops/fees/invoice-now", { body: {} });
+      announce(`${res.results.sent} invoice${res.results.sent === 1 ? "" : "s"} sent through PayPal${res.results.failed ? `, ${res.results.failed} failed` : ""}`);
+      revenue.reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  const r = revenue.data;
+  return (
+    <SectionCard title="Revenue" subtitle={r ? `LastCall keeps ${r.terms.label}. Shoppers pay nothing extra; each shop gets a weekly PayPal invoice.` : "LastCall's fees and the PayPal invoices that bill them."}
+      icon={<ReceiptLongRounded />}
+      action={<Button variant="contained" size="small" startIcon={<ReceiptLongRounded />} loading={busy} disabled={!r?.unbilled_minor} onClick={billNow}>Bill shops now</Button>}>
+      {error ? <Typography color="error" variant="body2" role="alert" sx={{ mb: 2 }}>{error}</Typography> : null}
+      {!r ? <LoadingBlock label="Loading revenue" lines={3} /> : (
+        <>
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            <Grid size={{ xs: 6, md: 3 }}><StatTile label="Fees, last 7 days" value={money(r.week.fee_minor)} caption={`${r.week.orders} paid orders`} icon={<PaymentsRounded />} /></Grid>
+            <Grid size={{ xs: 6, md: 3 }}><StatTile label="Not billed yet" value={money(r.unbilled_minor)} caption="Goes on the next weekly invoice" icon={<HistoryRounded />} tone="neutral" /></Grid>
+            <Grid size={{ xs: 6, md: 3 }}><StatTile label="Invoiced, unpaid" value={money(r.invoiced_open_minor)} caption="Sent through PayPal" icon={<ReceiptLongRounded />} tone="info" /></Grid>
+            <Grid size={{ xs: 6, md: 3 }}><StatTile label="Paid" value={money(r.paid_minor)} caption="Recorded from PayPal" icon={<CheckRounded />} tone="success" /></Grid>
+          </Grid>
+          <DataTable head={["Invoice", "Shop", "Covers", "Orders", "Amount", "Status", ""]} empty={!r.invoices.length}>
+            {r.invoices.map((i) => (
+              <TableRow key={i.id} hover>
+                <Cell mono>{i.number}</Cell>
+                <Cell>{i.shop}</Cell>
+                <Cell>{i.period_label}</Cell>
+                <Cell>{i.orders}</Cell>
+                <Cell>{money(i.amount_minor, i.currency)}{i.credit_minor ? <Typography variant="caption" color="text.secondary" component="div">after {money(i.credit_minor, i.currency)} credit</Typography> : null}</Cell>
+                <Cell><InvoiceStatus invoice={i} /></Cell>
+                <TableCell align="right">{i.payer_url ? <Button size="small" href={i.payer_url} target="_blank" rel="noopener noreferrer">View in PayPal</Button> : null}</TableCell>
+              </TableRow>
+            ))}
+          </DataTable>
+        </>
+      )}
     </SectionCard>
   );
 }
