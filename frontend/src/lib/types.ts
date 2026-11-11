@@ -111,6 +111,18 @@ export type MerchantPublic = {
 
 export type ImageRef = { url: string | null; alt: string };
 
+export type PhotoCredit = {
+  product: string;
+  shop: { name: string; slug: string };
+  image_url: string;
+  title: string | null;
+  author: string | null;
+  source: string | null;
+  url: string | null;
+  license: string;
+  license_url: string | null;
+};
+
 export type Allergens = {
   contains: string[];
   cross_contact: string[];

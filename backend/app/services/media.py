@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.errors import NotFound, Unprocessable
 from app.ids import new_id
-from app.models import Asset
+from app.models import Asset, Merchant, Product
 
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 MAX_PIXELS = 40_000_000
@@ -72,6 +72,26 @@ def store(db: Session, raw: bytes, *, filename: str, merchant_id: str | None, ac
 
 def url(asset_id: str) -> str:
     return f"/api/assets/{asset_id}"
+
+
+def credits(db: Session) -> list[dict[str, Any]]:
+    """Credits for the licensed photos live shops show (openly licensed photos must name their author and licence)."""
+    prefix = url("")
+    rows = db.execute(
+        select(Product.name, Product.image_url, Merchant.name, Merchant.slug)
+        .join(Merchant, Merchant.id == Product.merchant_id)
+        .where(Merchant.status == "live", Product.image_url.startswith(prefix))
+        .order_by(Merchant.name, Product.name)
+    ).all()
+    ids = {image.removeprefix(prefix) for _, image, _, _ in rows}
+    found = dict(db.execute(select(Asset.id, Asset.attribution).where(Asset.id.in_(ids))).tuples().all()) if ids else {}
+    out = []
+    for product, image, shop, slug in rows:
+        credit = found.get(image.removeprefix(prefix)) or {}
+        if credit.get("license"):
+            out.append({"product": product, "shop": {"name": shop, "slug": slug}, "image_url": image,
+                        **{k: credit.get(k) for k in ("title", "author", "source", "url", "license", "license_url")}})
+    return out
 
 
 def load(db: Session, asset_id: str, size: str) -> tuple[bytes, str, str]:
