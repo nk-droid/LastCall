@@ -12,9 +12,10 @@ into its own PayPal business account.
 
 | | |
 |---|---|
-| **AI where language is the problem** | The model reads the shopper's request, ranks and explains bundles, explains substitutions, drafts product copy and support replies. Every output is schema-validated and cross-checked: it can add exclusions but never remove them, can't raise a budget, and can't state allergen safety, prices or urgency. |
+| **AI where language is the problem** | The model reads the shopper's request, ranks and explains bundles, explains substitutions and drafts product copy. Every output is schema-validated and cross-checked: it can add exclusions but never remove them, can't raise a budget, and can't state allergen safety, prices or urgency. |
+| **Agents with tools, not authority** | Four tool-calling agents: **Ask LastCall** compares shops through the bundle engine, **Close-out** drafts price and slot changes a manager approves, **Watch alerts** picks which new bundle to email a waiting shopper, and **Support replies** checks the payment and any refund with PayPal before drafting an answer for staff. Tools wrap existing checks, a slow model turn is retried once, every agent falls back to plain rules, and each run, tool call and model turn is traced in Platform ops. |
 | **Code where money and safety are** | Prices, stock, dietary eligibility, pickup capacity, totals and every PayPal amount are deterministic. Strict allergies fail closed: only items the shop verified, with no listed cross-contact. |
-| **PayPal end to end** | Orders v2 checkout from the server's own quote, server-side capture, per-shop payees, refunds via Payments v2 with `PayPal-Auth-Assertion`, verified and de-duplicated webhooks, and reconciliation of lost responses without double charging. |
+| **PayPal end to end** | Shops connect their payout account by signing in with PayPal (Log in with PayPal) or by merchant ID, checked with PayPal before saving. Orders v2 checkout from the server's own quote, server-side capture, per-shop payees, refunds and live payment lookups via Payments v2 with `PayPal-Auth-Assertion`, verified and de-duplicated webhooks, and reconciliation of lost responses without double charging. |
 | **Honest commerce** | No fake urgency, savings only against a shop's documented regular price, and every changed basket needs the shopper's explicit approval. |
 
 ## Try it
@@ -30,10 +31,11 @@ The deployed app opens on four live showcase shops. **Night Owl Doughnuts takes 
 
 **As shop staff**: sign in with the staff credentials in the submission notes. Open an item in someone's basket in **Inventory** and
 press **Sold out**: their review page proposes a replacement within a second and won't let them pay until they accept it.
-Orders → **Mark ready** → enter the customer's pickup code to hand off.
+Orders → **Mark ready** → enter the customer's pickup code to hand off. When a customer sends a message from their pickup pass
+(e.g. *was I charged twice?*), the order's **Messages** show a reply drafted after checking the payment with PayPal, and what PayPal reported.
 
 **As a new merchant**: **List your shop** → create an account → work through the setup checklist (profile, pickup windows,
-policies, PayPal merchant ID, first products) → submit for review. A platform admin approves it in **Platform ops**.
+policies, **Connect with PayPal**, first products with photos) → submit for review. A platform admin approves it in **Platform ops**.
 
 ## Architecture
 
@@ -58,13 +60,14 @@ flowchart LR
 | Area | Where |
 |---|---|
 | Accounts, sessions, roles, invites, password reset | `backend/app/services/accounts.py`, `team.py`, `access.py` |
-| Shop onboarding, review, settings, payouts | `services/shops.py`, `payouts.py`, `payments/payee.py` |
+| Shop onboarding, review, settings, payouts (Connect with PayPal) | `services/shops.py`, `payouts.py`, `payments/payee.py` |
 | Catalog, stock, pickup slots, daily listings | `services/catalog.py`, `inventory.py`, `pickup.py`, `listings.py` |
 | Intent parsing (L1), bundles (L2), substitutions (L3) | `services/intent.py`, `feasibility.py`, `recommendation.py`, `substitution.py` |
 | Quotes and holds | `services/quotes.py`, `reservations.py`, `holds.py` |
 | Checkout, capture, reconciliation, webhooks, refunds | `services/checkout.py`, `webhooks.py`, `refunds.py` |
-| Fulfillment, support drafts (L5), product copy (L4) | `services/fulfillment.py`, `orders.py`, `copywriter.py` |
-| LLM adapter (versioned prompts, validation, call log) | `backend/app/ai/` |
+| Fulfillment, product copy (L4) | `services/fulfillment.py`, `orders.py`, `copywriter.py` |
+| Agents: Ask LastCall (A1), Watch alerts (A2), Close-out (A3), Support replies (A4) | `services/concierge.py`, `watches.py`, `closeout.py`, `support.py` |
+| LLM adapter and agent loop (versioned prompts, validation, tool calls, retries, traces) | `backend/app/ai/` |
 | Live updates | `backend/app/realtime.py`, `api/live.py`, `frontend/src/lib/use-live.ts` |
 
 ### Rules enforced in code
@@ -104,7 +107,7 @@ Staff accounts are `<shop>.<role>@example.com`, e.g. `nightowl.manager@example.c
 ## Tests
 
 ```bash
-cd backend && uv run pytest                 # 154 tests on a real PostgreSQL (acceptance tests AT-01…AT-15)
+cd backend && uv run pytest                 # 248 tests on a real PostgreSQL (acceptance tests AT-01…AT-15)
 cd frontend && npm run lint && npm run typecheck && npm run build
 cd frontend && E2E_SHOWCASE_PASSWORD=<SHOWCASE_PASSWORD> npx playwright test   # real PayPal Sandbox payment, axe WCAG 2.2 AA scans
 ```
@@ -138,7 +141,7 @@ SHOWCASE_PASSWORD=... .venv/bin/python -m app.cli seed-showcase      # also atta
 .venv/bin/python -m app.cli create-admin --email you@example.com
 ```
 
-Finally add a webhook in the PayPal app for `https://<lastcall-api>.onrender.com/api/webhooks/paypal` (events `CHECKOUT.ORDER.APPROVED`, `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.PENDING`, `PAYMENT.CAPTURE.DENIED`, `PAYMENT.CAPTURE.REFUNDED`, `PAYMENT.CAPTURE.REVERSED`) and set its ID as `PAYPAL_WEBHOOK_ID`. Optional: `SMTP_*` for receipts, invites and resets; `SHOWCASE_PAYEE_<SLUG>` to pay each showcase shop's own Sandbox business account.
+Finally add a webhook in the PayPal app for `https://<lastcall-api>.onrender.com/api/webhooks/paypal` (events `CHECKOUT.ORDER.APPROVED`, `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.PENDING`, `PAYMENT.CAPTURE.DENIED`, `PAYMENT.CAPTURE.REFUNDED`, `PAYMENT.CAPTURE.REVERSED`) and set its ID as `PAYPAL_WEBHOOK_ID`. For **Connect with PayPal**, turn on *Log in with PayPal* in the same app with the email and PayPal account ID (payer ID) / verification attributes, add `https://<lastcall-web>/merchant/paypal/return` as a return URL, and set `PAYPAL_CONNECT_ENABLED=true` (without it, owners enter their merchant ID). Optional: `SMTP_*` for receipts, invites and resets; `SHOWCASE_PAYEE_<SLUG>` to pay each showcase shop's own Sandbox business account.
 
 Operations: `GET /api/health` (database, migrations, worker heartbeat, PayPal), `GET /api/metrics` (Prometheus, bearer `METRICS_TOKEN`), JSON logs with correlation IDs, and **Platform ops** for payments, webhooks, AI calls, jobs, email, traces and the audit log.
 
