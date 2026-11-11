@@ -1,7 +1,7 @@
 "use client";
 
 import { HelpOutlineRounded, LocalOfferRounded, VerifiedRounded, WarningAmberRounded } from "@mui/icons-material";
-import { Box, Chip, Stack, Typography } from "@mui/material";
+import { Box, Stack, Typography } from "@mui/material";
 
 import { ALLERGEN_LABEL, money } from "@/lib/format";
 import type { Allergens, Totals } from "@/lib/types";
@@ -13,21 +13,31 @@ function allergen(code: string): string {
   return ALLERGEN_LABEL[code]?.toLowerCase() ?? code;
 }
 
-/** Merchant-supplied allergen facts with their provenance. Uncertain data is shown as uncertain. */
+/** "eggs, milk and wheat (gluten)" */
+function listed(codes: string[]): string {
+  const names = codes.map(allergen);
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0] ?? "";
+}
+
+/** Merchant-supplied allergen facts with their provenance: one "Contains" line and one "May contain" line,
+ *  so a basket stays readable on a phone. Uncertain data is shown as uncertain. */
 export function AllergenTags({ allergens, compact }: { allergens: Allergens; compact?: boolean }) {
   const verified = allergens.status === "verified";
   return (
-    <Stack spacing={0.75}>
-      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
-        {allergens.contains.length ? (
-          allergens.contains.map((code) => <Chip key={code} size="small" variant="outlined" label={`Contains ${allergen(code)}`} />)
-        ) : verified ? (
-          <Chip size="small" variant="outlined" label="No listed allergens" />
-        ) : null}
-        {allergens.cross_contact.map((code) => (
-          <StatusChip key={code} tone="warning" icon={WarningAmberRounded} label={`May contain ${allergen(code)}`} />
-        ))}
-      </Stack>
+    <Stack spacing={0.5}>
+      {allergens.contains.length ? (
+        <Typography variant="body2" color="text.secondary">
+          <Box component="span" sx={{ fontWeight: 650, color: "text.primary" }}>Contains</Box> {listed(allergens.contains)}
+        </Typography>
+      ) : verified ? (
+        <Typography variant="body2" color="text.secondary">No listed allergens</Typography>
+      ) : null}
+      {allergens.cross_contact.length ? (
+        <Typography variant="body2" sx={{ display: "flex", alignItems: "flex-start", gap: 0.5, color: tones.warning.fg, fontWeight: 600 }}>
+          <WarningAmberRounded aria-hidden sx={{ fontSize: 16, mt: "2px", flexShrink: 0 }} />
+          <span>May contain {listed(allergens.cross_contact)}</span>
+        </Typography>
+      ) : null}
       {!compact ? (
         <Typography
           variant="caption"
