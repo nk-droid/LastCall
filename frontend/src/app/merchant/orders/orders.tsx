@@ -370,8 +370,8 @@ function OrderDetailPanel({ orderId, onChanged }: { orderId: string; onChanged: 
               </Typography>
             </Box>
           ) : (
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} sx={{ alignItems: { sm: "center" } }}>
-              <Typography sx={{ flex: 1, fontWeight: 600, color: brand.leafDark }}>
+            <Stack direction="row" spacing={1.25} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
+              <Typography sx={{ flex: "1 1 220px", fontWeight: 600, color: brand.leafDark }}>
                 {d.fulfillment_status === "NEW" ? "Pack the order, then mark it ready." : "Mark it ready when the bag is packed."}
               </Typography>
               {d.fulfillment_status === "NEW" ? (
