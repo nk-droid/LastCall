@@ -54,7 +54,8 @@ export function AcceptInvite({ token }: { token: string }) {
   return (
     <AuthCard title={`Join ${p.shop.name}`} subtitle={`You've been invited as ${p.role_label.toLowerCase()} on LastCall.`}>
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", mb: 2.5 }}>
-        <FactChip icon={StorefrontRounded} label={`${p.shop.category} · ${p.shop.name}`} />
+        <FactChip icon={StorefrontRounded} label={p.shop.name} />
+        <FactChip label={p.shop.category} />
         <FactChip label={p.email} />
       </Stack>
       <FormError message={error} />

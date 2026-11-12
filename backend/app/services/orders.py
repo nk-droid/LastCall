@@ -42,7 +42,7 @@ def status_banner(order: Order) -> dict[str, str]:
             if r == "COMPLETED":
                 return {"key": "refunded", "tone": "neutral", "title": "Order cancelled and refunded", "detail": "PayPal confirmed your refund."}
             if r in ("REQUESTED", "PENDING", "OUTCOME_UNKNOWN"):
-                return {"key": "refund_pending", "tone": "warning", "title": "Order cancelled · refund pending", "detail": "We'll show the refund as complete once PayPal confirms it."}
+                return {"key": "refund_pending", "tone": "warning", "title": "Order cancelled, refund pending", "detail": "We'll show the refund as complete once PayPal confirms it."}
             return {"key": "cancelled", "tone": "neutral", "title": "Order cancelled", "detail": "Contact the shop if you have questions about your refund."}
         if f == "PICKED_UP":
             return {"key": "picked_up", "tone": "success", "title": "Picked up", "detail": "Enjoy! Your receipt is below."}

@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 
 import { useAnnounce } from "@/components/announcer";
 import { CLOSED_BY_MERCHANT } from "@/components/slot-status";
-import { SectionCard, StatusChip, brand, tones, type Tone } from "@/components/ui";
+import { MetaRow, SectionCard, StatusChip, brand, tones, type Tone } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { hhmmLabel } from "@/lib/format";
 import type { CloseoutAction, CloseoutPlan, CloseoutState, Slot } from "@/lib/types";
@@ -137,7 +137,7 @@ export function changeLabel(a: CloseoutAction): string {
   if (a.type === "close_slot") return `Close ${a.slot_label} slot`;
   if (a.type === "reopen_slot") return `Reopen ${a.slot_label} slot`;
   if (a.type === "set_slot_capacity") return `${a.slot_label} slot`;
-  if (a.type === "adjust_surplus") return `${a.name} · listed units`;
+  if (a.type === "adjust_surplus") return `${a.name} (listed units)`;
   return a.name ?? a.title ?? a.type.replace(/_/g, " ");
 }
 
@@ -206,7 +206,7 @@ function Results({ actions }: { actions: CloseoutAction[] }) {
         <Stack component="li" key={a.id} direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
           <StatusChip tone={RESULT[a.status].tone} label={RESULT[a.status].label} />
           <Typography variant="body2" sx={{ color: brand.forest }}>{a.title}</Typography>
-          {a.note ? <Typography variant="caption" color="text.secondary">· {a.note}</Typography> : null}
+          {a.note ? <Typography variant="caption" color="text.secondary">{a.note}</Typography> : null}
         </Stack>
       ))}
     </Stack>
@@ -215,19 +215,16 @@ function Results({ actions }: { actions: CloseoutAction[] }) {
 
 function Footer({ dropped, source, expires }: { dropped: CloseoutAction[]; source: string; expires: string }) {
   return (
-    <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 1.5, alignItems: "center", flexWrap: "wrap", color: "text.secondary" }}>
-      <Typography variant="caption" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
-        <ShieldRounded aria-hidden sx={{ fontSize: 14, color: tones.info.fg }} />
-        Checked against your price floor and live stock
-        {dropped.length ? (
-          <Box component="span" title={dropped.map((d) => `${d.type.replace(/_/g, " ")}: ${d.note}`).join("\n")}>
-            · {dropped.length} suggestion{dropped.length === 1 ? "" : "s"} blocked
-          </Box>
-        ) : null}
-      </Typography>
-      <Typography variant="caption">· Expires at {expires}</Typography>
-      {source === "rules" ? <Typography variant="caption">· Simple rules plan (assistant unavailable)</Typography> : null}
-    </Stack>
+    <MetaRow variant="caption" sx={{ mt: 1.5, color: "text.secondary" }} items={[
+      <><ShieldRounded aria-hidden sx={{ fontSize: 14, color: tones.info.fg }} />Checked against your price floor and live stock</>,
+      dropped.length ? (
+        <Box component="span" title={dropped.map((d) => `${d.type.replace(/_/g, " ")}: ${d.note}`).join("\n")}>
+          {dropped.length} suggestion{dropped.length === 1 ? "" : "s"} blocked
+        </Box>
+      ) : null,
+      `Expires at ${expires}`,
+      source === "rules" ? "Simple rules plan (assistant unavailable)" : null,
+    ]} />
   );
 }
 

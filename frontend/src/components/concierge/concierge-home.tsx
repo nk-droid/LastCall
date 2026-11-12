@@ -156,7 +156,7 @@ function AlsoFits({ cards, current, onView }: { cards: ConciergeCard[]; current:
             <Box sx={{ flex: "1 1 220px", minWidth: 0 }}>
               <Typography variant="body2" sx={{ fontWeight: 650, color: brand.muted }}>{c.shop.name}</Typography>
               <Typography variant="body2" sx={{ color: brand.forest }}>
-                <Box component="strong" sx={{ fontWeight: 700 }}>{plural(c.units, "item")}</Box>{" · "}{bundleSummary(c)}
+                <Box component="strong" sx={{ fontWeight: 700 }}>{plural(c.units, "item")}</Box>{": "}{bundleSummary(c)}
               </Typography>
             </Box>
             <Typography className="tabular" sx={{ fontWeight: 800 }}>{money(c.total_minor, c.currency)}</Typography>
@@ -188,8 +188,9 @@ function OtherShops({ details, shown, onSend, disabled }: { details: ConciergeDe
             <Box component="li" key={s.slug} sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap", typography: "body2" }}>
               <Box component="span" sx={{ flex: "1 1 240px" }}>
                 <Box component="strong" sx={{ fontWeight: 650 }}>{s.name}</Box>
-                <Box component="span" sx={{ color: brand.muted }}>
-                  {" · "}{s.options ? `${plural(s.options, "bundle")} fit${s.from_minor !== null ? `, from ${money(s.from_minor, s.currency)}` : ""}` : s.reason}
+                <Box component="span" sx={{ color: brand.muted, ml: 0.75 }}>
+                  <span className="sr-only">, </span>
+                  {s.options ? `${plural(s.options, "bundle")} fit${s.from_minor !== null ? `, from ${money(s.from_minor, s.currency)}` : ""}` : s.reason}
                 </Box>
               </Box>
               {s.options ? (

@@ -17,6 +17,7 @@ import {
   Inventory2Rounded,
   PauseCircleRounded,
   PauseRounded,
+  PersonRounded,
   PlayArrowRounded,
   ReceiptLongRounded,
   RemoveRounded,
@@ -70,7 +71,7 @@ import { AllergenTags, PriceTag } from "@/components/commerce";
 import { Dialog } from "@/components/dialog";
 import { hasRole, useStaff } from "@/components/merchant-shell";
 import { ProductImage } from "@/components/product-image";
-import { EmptyState, ErrorState, FactChip, FilterChip, LoadingBlock, PageHeader, StatusChip, brand, shadows, surface, tones, type Icon, type Tone } from "@/components/ui";
+import { EmptyState, ErrorState, FactChip, FilterChip, LoadingBlock, MetaRow, PageHeader, StatusChip, brand, shadows, surface, tones, type Icon, type Tone } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { ALLERGEN_LABEL, ago, dateTimeLabel, money } from "@/lib/format";
 import type { Allergens, InventoryRow } from "@/lib/types";
@@ -126,7 +127,7 @@ const panel = { ...surface.raised, p: 2.25, borderRadius: "16px" } as const;
 type Problem = { tone: Tone; label: string; icon?: Icon; fix?: { label: string; icon: Icon; tab?: TabKey; confirm?: boolean } };
 function problemOf(r: InventoryRow): Problem | null {
   if (r.status !== "active") return { tone: "neutral", label: "Paused", icon: PauseCircleRounded };
-  if (!r.image.url) return { tone: "danger", label: "No photo · hidden", icon: AddPhotoAlternateRounded, fix: { label: "Add photo", icon: AddPhotoAlternateRounded, tab: "details" } };
+  if (!r.image.url) return { tone: "danger", label: "No photo, hidden", icon: AddPhotoAlternateRounded, fix: { label: "Add photo", icon: AddPhotoAlternateRounded, tab: "details" } };
   if (r.allergens.status !== "verified") return { tone: "danger", label: "Allergen review", icon: HealthAndSafetyRounded, fix: { label: "Review allergens", icon: HealthAndSafetyRounded, tab: "allergens" } };
   if (r.availability_status === "unpriced") return { tone: "warning", label: "No price", icon: SellRounded, fix: { label: "Set price", icon: SellRounded, tab: "price" } };
   if (r.availability_status === "past_cutoff") return { tone: "danger", label: "Past cutoff", icon: ScheduleRounded, fix: { label: "Change cutoff", icon: ScheduleRounded, tab: "stock" } };
@@ -332,7 +333,7 @@ export function Inventory() {
                 <TableRow sx={{ "& td, & th": { borderBottom: 0, color: "text.primary", fontSize: 14, fontWeight: 700, py: 1.5 } }}>
                   <TableCell component="th" scope="row">
                     {view === "all" && !query ? "Today" : "Shown"}{" "}
-                    <Box component="span" sx={{ fontWeight: 500, color: "text.secondary" }}>· {rows.length === 1 ? "1 item" : `${rows.length} items`}</Box>
+                    <Box component="span" sx={{ fontWeight: 500, color: "text.secondary", ml: 0.5 }}>{rows.length === 1 ? "1 item" : `${rows.length} items`}</Box>
                   </TableCell>
                   <TableCell />
                   <TableCell align="right">{totals.sold}</TableCell>
@@ -726,10 +727,8 @@ function ItemEditor({ row, initialTab, canManage, onSaved, update }: {
             <StatusChip tone={verification.tone} icon={verification.icon} label={`Allergens ${verification.label.toLowerCase()}`} />
             {row.stale ? <StatusChip tone="warning" label="Stale count" /> : null}
           </Stack>
-          <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.75 }}>
-            {row.category} · cutoff {row.cutoff_label}
-            {row.price ? ` · ${money(row.price.sale_minor, row.price.currency)}` : ""}
-          </Typography>
+          <MetaRow variant="caption" sx={{ mt: 0.75 }}
+            items={[row.category, `Cutoff ${row.cutoff_label}`, row.price ? money(row.price.sale_minor, row.price.currency) : null]} />
         </Box>
       </Stack>
 
@@ -909,7 +908,7 @@ function ItemEditor({ row, initialTab, canManage, onSaved, update }: {
                     <Box sx={{ mt: 1.5, p: 2, borderRadius: "16px", bgcolor: tones.info.bg, boxShadow: shadows.insetSm }}>
                       <Typography variant="subtitle2" component="p" sx={{ display: "flex", alignItems: "center", gap: 0.75, color: tones.info.fg }}>
                         <AutoAwesomeRounded aria-hidden sx={{ fontSize: 18 }} />
-                        {draft.source === "ai" ? "AI draft · review before using" : "Template draft · AI unavailable"}
+                        {draft.source === "ai" ? "AI draft, review before using" : "Template draft (AI unavailable)"}
                       </Typography>
                       <Typography variant="body2" sx={{ mt: 0.75 }}>
                         {draft.draft}
@@ -1280,14 +1279,12 @@ function ItemEditor({ row, initialTab, canManage, onSaved, update }: {
                           <Typography variant="body2" sx={{ fontWeight: 650, "&::first-letter": { textTransform: "uppercase" } }}>
                             {e.type.replaceAll("_", " ").toLowerCase()}
                             {e.delta ? (
-                              <Box component="span" className="tabular" sx={{ fontWeight: 500, color: "text.secondary" }}>
-                                {" "}· {e.before} → {e.after}
+                              <Box component="span" className="tabular" sx={{ fontWeight: 500, color: "text.secondary", ml: 0.5 }}>
+                                {" "}{e.before} → {e.after}
                               </Box>
                             ) : null}
                           </Typography>
-                          <Typography variant="caption" color="text.secondary" component="p">
-                            {dateTimeLabel(e.at, zone)} · {e.actor} · {e.reason}
-                          </Typography>
+                          <MetaRow variant="caption" items={[dateTimeLabel(e.at, zone), { label: e.actor, icon: PersonRounded }, e.reason]} />
                         </Box>
                       </Box>
                     ))}
@@ -1310,9 +1307,7 @@ function ItemEditor({ row, initialTab, canManage, onSaved, update }: {
                         <Typography variant="body2" sx={{ fontWeight: 650, "&::first-letter": { textTransform: "uppercase" } }}>
                           {a.action.replaceAll("_", " ")}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary" component="p">
-                          {dateTimeLabel(a.at, zone)} · {a.actor}
-                        </Typography>
+                        <MetaRow variant="caption" items={[dateTimeLabel(a.at, zone), { label: a.actor, icon: PersonRounded }]} />
                       </Box>
                     ))}
                   </Box>
@@ -1336,9 +1331,9 @@ function DeltaBadge({ delta }: { delta: number }) {
     <Box
       className="tabular"
       aria-hidden={delta === 0 || undefined}
-      sx={{ minWidth: 44, height: 28, px: 0.75, display: "grid", placeItems: "center", borderRadius: "99px", bgcolor: tone.bg, color: tone.fg, fontWeight: 700, fontSize: "0.8rem", flexShrink: 0 }}
+      sx={{ minWidth: 44, height: 28, px: 0.75, display: "grid", placeItems: "center", borderRadius: "99px", bgcolor: tone.bg, color: delta === 0 ? brand.muted : tone.fg, fontWeight: 700, fontSize: "0.8rem", flexShrink: 0 }}
     >
-      {delta > 0 ? `+${delta}` : delta < 0 ? `−${Math.abs(delta)}` : "·"}
+      {delta > 0 ? `+${delta}` : delta < 0 ? `−${Math.abs(delta)}` : "0"}
     </Box>
   );
 }

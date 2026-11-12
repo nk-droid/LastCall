@@ -424,7 +424,7 @@ export function Checkout({ quoteId }: { quoteId: string }) {
                 <>
                   <Stack spacing={1} sx={{ mb: 2.5 }}>
                     <Fact icon={EventBusyRounded}>Cancellation requests close {m.policies.cancellation_cutoff_minutes} min before pickup</Fact>
-                    <Fact icon={StorefrontRounded}>Pickup only · no delivery</Fact>
+                    <Fact icon={StorefrontRounded}>Pickup only, no delivery</Fact>
                   </Stack>
                   <PolicyAccordion title="Cancellation policy" icon={<EventBusyRounded />}>
                     {m.policies.cancellation_policy_text}

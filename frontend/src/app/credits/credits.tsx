@@ -6,7 +6,7 @@ import { Fragment, type ReactNode } from "react";
 
 import { ProductImage } from "@/components/product-image";
 import { PageShell } from "@/components/site";
-import { EmptyState, ErrorState, LoadingBlock, PageHeader, SectionCard } from "@/components/ui";
+import { EmptyState, ErrorState, LoadingBlock, MetaRow, PageHeader, SectionCard } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import type { PhotoCredit } from "@/lib/types";
 import { useResource } from "@/lib/use-api";
@@ -46,17 +46,14 @@ export function Credits() {
                         <Typography variant="body2" sx={{ fontWeight: 650 }}>
                           {photo.product}
                         </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
-                          {photo.author ? `Photo by ${photo.author}` : "Photo"}
-                          {" · "}
-                          {photo.license_url ? <ExternalLink href={photo.license_url}>{photo.license}</ExternalLink> : photo.license}
-                          {photo.url ? (
-                            <>
-                              {" · "}
-                              <ExternalLink href={photo.url}>{photo.source ?? "Source"}</ExternalLink>
-                            </>
-                          ) : null}
-                        </Typography>
+                        <MetaRow
+                          sx={{ overflowWrap: "anywhere" }}
+                          items={[
+                            photo.author ? `Photo by ${photo.author}` : "Photo",
+                            photo.license_url ? <ExternalLink href={photo.license_url}>{photo.license}</ExternalLink> : photo.license,
+                            photo.url ? <ExternalLink href={photo.url}>{photo.source ?? "Source"}</ExternalLink> : null,
+                          ]}
+                        />
                       </Box>
                     </Stack>
                   </Fragment>

@@ -66,13 +66,13 @@ def test_each_shop_sees_what_ask_lastcall_did_for_it_as_facts(app, client, fixtu
 
     [suggested] = juniper["feed"]
     assert suggested["title"] == "Ask LastCall suggested your bundle" and suggested["status"] is None
-    assert suggested["detail"].startswith("4 people · under $10.00 · no peanuts · ")
+    assert suggested["detail"].startswith("4 people, under $10.00, no peanuts: ")
     assert "pickup" not in suggested["detail"]  # no time was asked for, so the shop's whole window isn't shown as one
     assert juniper["teammates"]["concierge"] == {"listed": True, "suggested_today": 1, "suggested_week": 1, "ordered_week": 0}
     assert juniper["gaps"] == []
 
     [passed] = owl["feed"]
-    assert passed["title"] == "Ask LastCall passed on your shop" and passed["detail"].startswith("30 people · under $10.00 · no peanuts")
+    assert passed["title"] == "Ask LastCall passed on your shop" and passed["detail"].startswith("30 people, under $10.00, no peanuts")
     assert [g["count"] for g in owl["gaps"]] == [1]
     # The shopper's own words never reach the shop.
     for view in (juniper, owl):

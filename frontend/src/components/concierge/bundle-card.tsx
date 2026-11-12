@@ -53,7 +53,7 @@ export function BundleCard({ card, top }: { card: ConciergeCard; top?: boolean }
         {card.lines.slice(0, 4).map((line) => <ProductImage key={line.name} image={line.image ?? { url: null, alt: line.name }} size="sm" sx={{ width: 44, height: 44 }} />)}
       </Stack>
       <Typography variant="body2" sx={{ color: brand.forest }}>
-        {card.lines.map((line) => `${line.qty} × ${line.name}`).join(" · ")}
+        {card.lines.map((line) => `${line.qty} × ${line.name}`).join(", ")}
       </Typography>
       <Stack component="ul" spacing={0.5} aria-label="Why it fits" sx={{ listStyle: "none", m: 0, p: 0 }}>
         {fits.map((fit) => {

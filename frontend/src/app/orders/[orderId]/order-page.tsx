@@ -21,6 +21,7 @@ import {
   ScheduleRounded,
   SendRounded,
   ShoppingBagRounded,
+  StorefrontRounded,
   SupportAgentRounded,
   TaskAltRounded,
   TimerOffRounded,
@@ -56,7 +57,7 @@ import { PriceBreakdown } from "@/components/commerce";
 import { ProductImage } from "@/components/product-image";
 import { PageShell } from "@/components/site";
 import { FulfillmentPill, RefundPill } from "@/components/status-pills";
-import { ErrorState, InfoList, LoadingBlock, SectionCard, StatusChip, brand, surface, shadows, tones, type Icon, type Tone } from "@/components/ui";
+import { ErrorState, InfoList, LoadingBlock, MetaRow, SectionCard, StatusChip, brand, surface, shadows, tones, type Icon, type Tone } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { orderMemory, useRememberedOrders } from "@/lib/flow";
 import { PAYMENT_STATUS_LABEL, dateTimeLabel, money } from "@/lib/format";
@@ -199,9 +200,13 @@ export function OrderPage({ orderId }: { orderId: string }) {
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", mt: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  {shop.name} · Order {o.number} · {o.pickup.date_label}, {o.pickup.label}
-                </Typography>
+                <MetaRow
+                  items={[
+                    { label: shop.name, icon: StorefrontRounded },
+                    `Order ${o.number}`,
+                    { label: `${o.pickup.date_label}, ${o.pickup.label}`, icon: ScheduleRounded },
+                  ]}
+                />
                 <RefundPill status={o.refund_status} />
               </Stack>
             </Box>
@@ -272,7 +277,7 @@ export function OrderPage({ orderId }: { orderId: string }) {
                     />
                   ) : null}
                   <Box sx={{ mt: 2.5 }}>
-                    <StatusChip tone="success" icon={VerifiedRounded} label="Paid · verified with PayPal" />
+                    <StatusChip tone="success" icon={VerifiedRounded} label="Paid and verified with PayPal" />
                   </Box>
                 </Box>
                 <InfoList
@@ -313,7 +318,7 @@ export function OrderPage({ orderId }: { orderId: string }) {
                 {paid ? (
                   <StatusChip tone="success" icon={PaymentsRounded} label={`${money(o.amount_minor, o.currency)} charged via PayPal`} />
                 ) : (
-                  <StatusChip tone="neutral" icon={HourglassTopRounded} label={`${money(o.amount_minor, o.currency)} · not yet charged`} />
+                  <StatusChip tone="neutral" icon={HourglassTopRounded} label={`${money(o.amount_minor, o.currency)} not yet charged`} />
                 )}
               </Box>
               <ReceiptDetails>
@@ -425,7 +430,7 @@ export function OrderPage({ orderId }: { orderId: string }) {
                   <StatusChip
                     tone={request.status === "declined" ? "danger" : request.status === "approved" ? "success" : "warning"}
                     icon={request.status === "declined" ? BlockRounded : request.status === "approved" ? CheckCircleRounded : HourglassTopRounded}
-                    label={request.status === "requested" ? "Requested · awaiting the shop" : request.status === "approved" ? "Cancellation approved" : "Cancellation declined"}
+                    label={request.status === "requested" ? "Requested, awaiting the shop" : request.status === "approved" ? "Cancellation approved" : "Cancellation declined"}
                   />
                   {request.decision_reason ? (
                     <Typography variant="body2" sx={{ mt: 1.5 }}>

@@ -29,7 +29,7 @@ import {
   type SvgIconProps,
 } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
-import { useId, type ComponentType, type ElementType, type ReactNode, type Ref } from "react";
+import { isValidElement, useId, type ComponentType, type ElementType, type ReactNode, type Ref } from "react";
 
 import { brand, surface, shadows, tones, type Tone } from "@/theme/tokens";
 
@@ -208,6 +208,48 @@ export function StatTile({ label, value, caption, icon, tone = "success", progre
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+export type MetaItem = { label: ReactNode; icon?: Icon; strong?: boolean };
+
+const srOnly = { position: "absolute", width: 1, height: 1, p: 0, m: "-1px", overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 } as const;
+
+function isMetaItem(item: unknown): item is MetaItem {
+  return typeof item === "object" && item !== null && !isValidElement(item) && "label" in item;
+}
+
+/**
+ * Short facts side by side ("#1054", "Pickup 5:30 PM", "Paid via PayPal"), set apart by space and an optional icon
+ * rather than a separator character. Empty items are skipped and the row wraps on narrow screens.
+ */
+export function MetaRow({ items, variant = "body2", color = "text.secondary", inline, component, sx }: {
+  items: (MetaItem | ReactNode)[];
+  variant?: "body1" | "body2" | "caption";
+  color?: string;
+  inline?: boolean;
+  component?: ElementType;
+  sx?: SxProps<Theme>;
+}) {
+  const shown = items.filter((i) => i !== null && i !== undefined && i !== false && i !== "");
+  return (
+    <Typography
+      variant={variant}
+      component={component ?? (inline ? "span" : "div")}
+      sx={sxs({ color, display: inline ? "inline-flex" : "flex", flexWrap: "wrap", alignItems: "center", columnGap: 1.75, rowGap: 0.25, verticalAlign: "baseline" }, sx)}
+    >
+      {shown.map((item, index) => {
+        const m: MetaItem = isMetaItem(item) ? item : { label: item };
+        const IconComponent = m.icon;
+        return (
+          <Box key={index} component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, minWidth: 0, ...(m.strong ? { fontWeight: 650, color: "text.primary" } : {}) }}>
+            {index > 0 ? <Box component="span" sx={srOnly}>, </Box> : null}
+            {IconComponent ? <IconComponent aria-hidden sx={{ fontSize: "1.15em", color: brand.leaf }} /> : null}
+            {m.label}
+          </Box>
+        );
+      })}
+    </Typography>
   );
 }
 

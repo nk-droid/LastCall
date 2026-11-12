@@ -6,7 +6,9 @@ import {
   CheckRounded,
   EmailRounded,
   HistoryRounded,
+  MailOutlineRounded,
   PaymentsRounded,
+  PhoneRounded,
   ReceiptLongRounded,
   RouteRounded,
   StorefrontRounded,
@@ -39,7 +41,7 @@ import { signInHref, useAccount } from "@/components/account";
 import { useAnnounce } from "@/components/announcer";
 import { Dialog } from "@/components/dialog";
 import { PageShell } from "@/components/site";
-import { EmptyState, ErrorState, FactChip, LoadingBlock, PageHeader, SectionCard, StatTile, StatusChip, type Tone } from "@/components/ui";
+import { EmptyState, ErrorState, FactChip, LoadingBlock, MetaRow, PageHeader, SectionCard, StatTile, StatusChip, type Tone } from "@/components/ui";
 import { InvoiceStatus } from "@/components/commerce";
 import { api, errorMessage } from "@/lib/api";
 import { ago, money } from "@/lib/format";
@@ -169,7 +171,7 @@ function ShopsTab() {
         <DataTable head={["Shop", "Status", "Owners", "Submitted", ""]} empty={!shops.data.shops.length}>
           {shops.data.shops.map((s) => (
             <TableRow key={s.id} hover>
-              <Cell><Typography variant="body2" sx={{ fontWeight: 650 }}>{s.name}</Typography><Typography variant="caption" color="text.secondary">{s.category} · {s.city}{s.is_showcase ? " · showcase" : ""}</Typography></Cell>
+              <Cell><Typography variant="body2" sx={{ fontWeight: 650 }}>{s.name}</Typography><MetaRow variant="caption" items={[s.category, s.city, s.is_showcase ? "Showcase" : null]} /></Cell>
               <Cell><StatusChip tone={SHOP_TONE[s.status] ?? "neutral"} label={s.status.replace("_", " ")} /></Cell>
               <Cell>{s.owners.join(", ") || "—"}</Cell>
               <Cell>{s.submitted_at ? ago(s.submitted_at) : "—"}</Cell>
@@ -208,7 +210,7 @@ function ShopReview({ id, onClose, onChanged }: { id: string; onClose: () => voi
   }
 
   return (
-    <Dialog open onClose={onClose} side title={d ? d.shop.name : "Shop"} description={d ? `${d.shop.category} · ${d.shop.address.city} · ${d.shop.status.replace("_", " ")}` : undefined}>
+    <Dialog open onClose={onClose} side title={d ? d.shop.name : "Shop"} description={d ? `${d.shop.category} in ${d.shop.address.city}, ${d.shop.status.replace("_", " ")}` : undefined}>
       {!d ? <LoadingBlock label="Loading shop" /> : (
         <Stack spacing={2.5}>
           {error ? <Alert severity="error" role="alert">{error}</Alert> : null}
@@ -228,7 +230,7 @@ function ShopReview({ id, onClose, onChanged }: { id: string; onClose: () => voi
           <Box>
             <Typography variant="subtitle2">Address and contact</Typography>
             <Typography variant="body2" color="text.secondary">{[d.shop.address.line1, d.shop.address.city, d.shop.address.region, d.shop.address.postal_code].filter(Boolean).join(", ")}</Typography>
-            <Typography variant="body2" color="text.secondary">{d.shop.phone} · {d.shop.support_email || "no support email"}</Typography>
+            <MetaRow items={[{ icon: PhoneRounded, label: d.shop.phone }, { icon: MailOutlineRounded, label: d.shop.support_email || "No support email" }]} />
           </Box>
           <Box>
             <Typography variant="subtitle2">Allergen disclosure</Typography>
@@ -368,7 +370,7 @@ function TraceDrawer({ traceId, onClose }: { traceId: string; onClose: () => voi
           {trace.data.events.map((e, i) => (
             <li key={i}>
               <Typography variant="body2" sx={{ fontWeight: 650 }}>{e.action.replaceAll("_", " ")}</Typography>
-              <Typography variant="caption" color="text.secondary">{new Date(e.at).toLocaleTimeString()} · {e.entity_type} · {e.actor}</Typography>
+              <MetaRow variant="caption" items={[new Date(e.at).toLocaleTimeString(), e.entity_type, e.actor]} />
             </li>
           ))}
         </Stack>
@@ -379,8 +381,6 @@ function TraceDrawer({ traceId, onClose }: { traceId: string; onClose: () => voi
 
 // ----------------------------------------------------------------------------- the rest
 
-function WebhooksTab() {
-  const events = useResource((signal) => api<{ events: Webhook[] }>("/api/ops/webhooks", { signal }), [], { pollMs: 15_000 });
 /** PayPal's verify-webhook-signature answers "SUCCESS"; only events that passed are stored. */
 function VerificationChip({ value }: { value: string }) {
   const ok = ["success", "verified"].includes(value.toLowerCase());
@@ -399,6 +399,8 @@ function webhookResult(result: string | null): string {
   return RESULT_HEAD[head] ? `${RESULT_HEAD[head]} ${detail}`.trim() : result.replaceAll("_", " ").replace(":", ": ");
 }
 
+function WebhooksTab() {
+  const events = useResource((signal) => api<{ events: Webhook[] }>("/api/ops/webhooks", { signal }), [], { pollMs: 15_000 });
   return (
     <SectionCard title="PayPal webhooks" subtitle="Verified, de-duplicated, then reconciled against PayPal." icon={<WebhookRounded />}>
       {!events.data ? <LoadingBlock label="Loading webhooks" lines={3} /> : (
@@ -448,7 +450,7 @@ function JobsTab() {
       {!jobs.data ? <LoadingBlock label="Loading jobs" lines={3} /> : (
         <>
           <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", mb: 2 }}>
-            {Object.entries(jobs.data.periodic).map(([kind, every]) => <FactChip key={kind} label={`${kind} · every ${every >= 60 ? `${every / 60} min` : `${every}s`}`} />)}
+            {Object.entries(jobs.data.periodic).map(([kind, every]) => <FactChip key={kind} label={`${kind} every ${every >= 60 ? `${every / 60} min` : `${every}s`}`} />)}
           </Stack>
           <DataTable head={["Job", "State", "Attempts", "Run at", "Last error"]} empty={!jobs.data.jobs.length}>
             {jobs.data.jobs.map((j) => (

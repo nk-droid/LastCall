@@ -62,7 +62,7 @@ export function Insights() {
         </ToggleButtonGroup>
         {d ? (
           <Typography variant="body2" color="text.secondary">
-            <Box component="span" sx={{ color: "text.primary", fontWeight: 600 }}>{range(d.start, d.end)}</Box> · compared with {range(d.compare_start, d.compare_end)}
+            <Box component="span" sx={{ color: "text.primary", fontWeight: 600 }}>{range(d.start, d.end)}</Box>, compared with {range(d.compare_start, d.compare_end)}
           </Typography>
         ) : null}
         {d?.caution ? <Typography variant="body2" color="text.secondary" sx={{ ml: { md: "auto" } }}>{d.caution}</Typography> : null}
@@ -208,7 +208,7 @@ function Headline({ d }: { d: InsightsSummary }) {
       <Stat hero label="Net sales" value={money(h.net_sales_minor, d.currency)}
         delta={h.change !== null ? <Delta change={h.change} upIsGood compared={compared} /> : null}
         caption={[plural(h.orders, "order"), h.orders ? `${money(h.average_order_minor, d.currency)} average` : null,
-                  h.refunded_minor ? `${money(h.refunded_minor, d.currency)} refunded` : null].filter(Boolean).join(" · ")} />
+                  h.refunded_minor ? `${money(h.refunded_minor, d.currency)} refunded` : null].filter(Boolean).join(", ")} />
       <Stat label="Value recovered" value={h.recovered !== null ? pct(h.recovered) : "—"} unit={h.recovered !== null ? "of menu price" : undefined}
         caption={h.menu_value_minor ? `Shoppers saved ${money(h.saved_minor, d.currency)}` : "Shows once something sells"} />
       <Stat label="Left at close" value={left ? String(left.units) : "—"} unit={left ? (left.units === 1 ? "item" : "items") : undefined}
@@ -232,7 +232,7 @@ function SalesByDay({ d }: { d: InsightsSummary }) {
     const isBest = r === best && r.sales_minor > 0;
     return {
       key: r.date, value: r.sales_minor / 100, strong: r.today,
-      tip: [r.today ? `${value} so far` : value, `${r.today ? "Today" : name} · ${plural(r.orders, "order")}${isBest && !r.today ? " · best day" : ""}`],
+      tip: [r.today ? `${value} so far` : value, `${r.today ? "Today" : name} (${plural(r.orders, "order")}${isBest && !r.today ? ", best day" : ""})`],
       aria: `${r.today ? "Today" : name}: ${value}${r.today ? " so far" : ""} from ${plural(r.orders, "order")}`,
       cap: r.today && r.sales_minor > 0 ? `${value} so far` : isBest ? value : undefined,
       axis: r.today ? "Today" : week ? fmt(r.date, { weekday: "short" })
@@ -288,7 +288,7 @@ function BusyHours({ d }: { d: InsightsSummary }) {
       {busy ? (
         <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", mb: -1.5 }}>
           <Box aria-hidden sx={{ width: 12, height: 12, borderRadius: "3px", bgcolor: brand.mint, border: `1px solid ${tones.success.border}` }} />
-          <Typography variant="body2" sx={{ fontWeight: 600 }}>Busiest {busy.label} · {pct(busy.share)} of orders</Typography>
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>Busiest {busy.label} ({pct(busy.share)} of orders)</Typography>
         </Stack>
       ) : null}
       <BarChart bars={bars} top={top} ticks={ticks} tickLabel={(v) => String(v)} height={busy ? 118 : 150} barWidth={10} gutter={28}
@@ -377,7 +377,7 @@ function ListTomorrow({ d }: { d: InsightsSummary }) {
                       {i.left === null ? <Typography variant="body2" color="text.secondary">—</Typography> : (
                         <Typography variant="body2">
                           <Box component="span" sx={{ fontWeight: 600 }}>{i.left}</Box>
-                          {i.left ? <Box component="span" sx={{ color: "text.secondary" }}> · on {plural(i.left_days, "day")}</Box> : null}
+                          {i.left ? <Box component="span" sx={{ color: "text.secondary" }}> on {plural(i.left_days, "day")}</Box> : null}
                         </Typography>
                       )}
                     </TableCell>
@@ -385,7 +385,7 @@ function ListTomorrow({ d }: { d: InsightsSummary }) {
                       {i.sold_out_days ? (
                         <Typography variant="body2" sx={{ whiteSpace: "nowrap" }}>
                           <Box component="span" sx={{ fontWeight: 600 }}>{i.sold_out_days} of {i.days} days</Box>
-                          {i.sold_out_by ? <Box component="span" sx={{ color: "text.secondary" }}> · by {i.sold_out_by}</Box> : null}
+                          {i.sold_out_by ? <Box component="span" sx={{ color: "text.secondary" }}> by {i.sold_out_by}</Box> : null}
                         </Typography>
                       ) : <Typography variant="body2" color="text.secondary">Never</Typography>}
                     </TableCell>
@@ -430,7 +430,7 @@ function MissedDemand({ d }: { d: InsightsSummary }) {
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="body2" sx={{ fontWeight: 700 }}>{plural(m.watching, "person", "people")} watching</Typography>
           <Typography variant="body2" color="text.secondary">
-            {m.alerts ? `${plural(m.alerts, "alert")} sent · ${plural(m.alerts_ordered, "order")}` : "No alerts sent in this period"}
+            {m.alerts ? `${plural(m.alerts, "alert")} sent, ${plural(m.alerts_ordered, "order")}` : "No alerts sent in this period"}
           </Typography>
         </Box>
       </Stack>

@@ -472,7 +472,7 @@ PREF_LABELS = {
 def _fields(intent: Intent, sources: dict[str, str], origin: dict[str, str], merchant: Merchant, notes: list[str]) -> list[dict[str, Any]]:
     fields: list[dict[str, Any]] = []
     if intent.party_size:
-        occ = f" · {intent.occasion}" if intent.occasion else ""
+        occ = f", {intent.occasion}" if intent.occasion else ""
         fields.append({"key": "party_size", "label": f"{intent.party_size} {'person' if intent.party_size == 1 else 'people'}{occ}", "source": sources.get("party_size", "text"), "status": "confirmed"})
     if intent.budget_minor:
         fields.append({"key": "budget", "label": f"Budget {format_money(intent.budget_minor, intent.currency)} max", "source": sources.get("budget", "text"), "status": "confirmed"})

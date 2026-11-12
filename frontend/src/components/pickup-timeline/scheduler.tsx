@@ -360,7 +360,7 @@ export function SlotsTimeline({ slots, canEdit, onUpdate }: { slots: Slot[]; can
         if (!slot) return "";
         const status = slotStatus(slot);
         const time = splitLabel(slot.label).time;
-        return `<strong>${StringHelper.encodeHtml(time)}</strong><br>${slot.booked} of ${slot.capacity} booked · ${StringHelper.encodeHtml(status.label)}`
+        return `<strong>${StringHelper.encodeHtml(time)}</strong><br>${slot.booked} of ${slot.capacity} booked<br>${StringHelper.encodeHtml(status.label)}`
           + (status.reason ? `<br><small>${StringHelper.encodeHtml(status.reason)}</small>` : "");
       },
     },

@@ -79,7 +79,7 @@ def render(template: str, ctx: dict[str, Any], link: str | None) -> Rendered:
                  "Existing orders stay in your console. Reply to this email to resolve it."]
         return Rendered(f"{ctx['shop']} is paused", "\n\n".join([*lines, link or ""]), _html(lines, ("Open your console", link or "")))
     if template == "order_confirmed":
-        lines = [f"Hi {ctx['name']}, your order at {ctx['shop']} is confirmed and paid.", f"Order {ctx['order_number']} · {ctx['total']}",
+        lines = [f"Hi {ctx['name']}, your order at {ctx['shop']} is confirmed and paid.", f"Order {ctx['order_number']}, total {ctx['total']}",
                  *ctx["items"], f"Pickup: {ctx['pickup']} at {ctx['address']}", f"Your pickup code: {ctx['code']}",
                  "Show the code at the counter. Your order page has the code, a QR pass and cancellation options."]
         return Rendered(f"Order {ctx['order_number']} confirmed: pickup {ctx['pickup']}", "\n\n".join([*lines, link or ""]),
@@ -94,7 +94,7 @@ def render(template: str, ctx: dict[str, Any], link: str | None) -> Rendered:
         return Rendered(f"Refund of {ctx['refund']} completed", "\n\n".join([*lines, link or ""]), _html(lines, ("View your order", link or "")))
     if template == "watch_match":
         lines = [f"Hi {ctx['name']}, {ctx['shop']} just listed a bundle that fits what you asked us to watch for:", f"“{ctx['request']}”",
-                 f"{ctx['label']}: {', '.join(ctx['items'])}", f"{ctx['total']} · pickup {ctx['pickup']}",
+                 f"{ctx['label']}: {', '.join(ctx['items'])}", f"{ctx['total']}, pickup {ctx['pickup']}",
                  *([ctx["summary"]] if ctx.get("summary") else []),
                  "It isn't held until you tap below, so it may be gone by then. Your allergen choices are checked again when you open it.",
                  f"Stop watching for this: {ctx['stop_link']}"]

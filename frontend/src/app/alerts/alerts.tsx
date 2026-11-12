@@ -100,7 +100,7 @@ function AlertCard({ alert: a, fresh, onDismiss }: { alert: WatchAlert; fresh: b
       <Typography variant="subtitle1" component="h3" sx={{ fontWeight: 800, display: "flex", alignItems: "center", gap: 0.75 }}>
         <StorefrontRounded aria-hidden sx={{ fontSize: 18, color: brand.leaf }} /> Found at {a.shop.name}
       </Typography>
-      <Typography variant="body2" sx={{ color: brand.forest }}>{a.lines.map((ln) => `${ln.qty} × ${ln.name}`).join(" · ")}</Typography>
+      <Typography variant="body2" sx={{ color: brand.forest }}>{a.lines.map((ln) => `${ln.qty} × ${ln.name}`).join(", ")}</Typography>
       {a.summary ? <Typography variant="body2" color="text.secondary">“{a.summary}”</Typography> : null}
       <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
         <PriceTag price={a.total_minor} currency={a.currency} size="sm" />

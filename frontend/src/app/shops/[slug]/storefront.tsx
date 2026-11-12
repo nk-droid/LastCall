@@ -50,7 +50,7 @@ import { useId, useState } from "react";
 import { useAccount } from "@/components/account";
 import { ProductImage } from "@/components/product-image";
 import { PageShell } from "@/components/site";
-import { EmptyState, ErrorState, FilterChip, InfoList, InfoTip, QuantityStepper, SectionCard, SlowNotice, StatusChip, brand, surface } from "@/components/ui";
+import { EmptyState, ErrorState, FilterChip, InfoList, InfoTip, MetaRow, QuantityStepper, SectionCard, SlowNotice, StatusChip, brand, surface } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { flow } from "@/lib/flow";
 import { ago, money } from "@/lib/format";
@@ -135,9 +135,10 @@ export function Storefront({ slug }: { slug: string }) {
         <Alert severity="success" role="status" icon={<ConfirmationNumberRounded />} sx={{ mb: 3 }}>
           <AlertTitle>Your order {returning.number}</AlertTitle>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ alignItems: { sm: "center" } }}>
-            <span>
-              {returning.status.title} · pickup {returning.pickup.date_label}, {returning.pickup.label}
-            </span>
+            <MetaRow
+              color="inherit"
+              items={[returning.status.title, { label: `Pickup ${returning.pickup.date_label}, ${returning.pickup.label}`, icon: ScheduleRounded }]}
+            />
             <Button href={`/orders/${returning.id}`} size="small" variant="outlined" color="inherit" endIcon={<ArrowForwardRounded />} sx={{ alignSelf: "flex-start" }}>
               View pickup pass
             </Button>
@@ -151,15 +152,7 @@ export function Storefront({ slug }: { slug: string }) {
             All shops
           </Button>
           {m ? (
-            <Typography variant="body2" color="text.secondary" sx={{ display: "flex", alignItems: "center", gap: 0.75, fontWeight: 600 }}>
-              <StorefrontRounded aria-hidden sx={{ fontSize: 17, color: brand.leaf }} />
-              {m.category}
-              <Box component="span" aria-hidden>
-                ·
-              </Box>
-              <PlaceRounded aria-hidden sx={{ fontSize: 16 }} />
-              {m.address.city}
-            </Typography>
+            <MetaRow sx={{ fontWeight: 600 }} items={[{ label: m.category, icon: StorefrontRounded }, { label: m.address.city, icon: PlaceRounded }]} />
           ) : (
             <Skeleton variant="rounded" width={180} height={22} sx={{ borderRadius: "999px" }} />
           )}
@@ -289,7 +282,7 @@ export function Storefront({ slug }: { slug: string }) {
                       <option value="any">Any available time</option>
                       {bookable.map((s) => (
                         <option key={s.id} value={s.id}>
-                          {s.label} · {s.remaining} {s.remaining === 1 ? "spot" : "spots"} left
+                          {s.label} ({s.remaining} {s.remaining === 1 ? "spot" : "spots"} left)
                         </option>
                       ))}
                     </TextField>
@@ -388,15 +381,14 @@ function PickupStatus({ merchant, loading, slow }: { merchant: MerchantPublic | 
   return (
     <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", mt: 2.5 }}>
       <StatusChip tone="success" size="medium" icon={ScheduleRounded} label={`Pickup today ${p.today_window?.label ?? ""}`} sx={{ fontSize: "0.9rem" }} />
-      <Typography variant="body2" color="text.secondary" className="tabular" sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-        <Inventory2Rounded aria-hidden sx={{ fontSize: 17 }} />
-        {merchant.surplus.items_available} items · {merchant.surplus.units_available} left
-        <Box component="span" aria-hidden>
-          ·
-        </Box>
-        <UpdateRounded aria-hidden sx={{ fontSize: 16 }} />
-        updated {ago(merchant.surplus.as_of)}
-      </Typography>
+      <MetaRow
+        sx={{ fontVariantNumeric: "tabular-nums" }}
+        items={[
+          { label: `${merchant.surplus.items_available} items`, icon: Inventory2Rounded },
+          `${merchant.surplus.units_available} left`,
+          { label: `Updated ${ago(merchant.surplus.as_of)}`, icon: UpdateRounded },
+        ]}
+      />
     </Stack>
   );
 }
@@ -434,7 +426,7 @@ function MerchantTrust({ merchant, slug }: { merchant: MerchantPublic | null; sl
           },
           { icon: ScheduleRounded, label: "Open today", value: merchant.hours_today ? `${merchant.hours_today.open}–${merchant.hours_today.close}` : "Closed today" },
           { icon: ShoppingBagRounded, label: "Surplus pickup", value: merchant.pickup.today_window?.label ?? "Not today" },
-          { icon: PaymentsRounded, label: "Payment", value: "PayPal · you approve the total first" },
+          { icon: PaymentsRounded, label: "Payment", value: "PayPal (you approve the total first)" },
         ]}
         columns={2}
       />

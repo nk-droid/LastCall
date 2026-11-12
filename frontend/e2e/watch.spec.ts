@@ -20,7 +20,7 @@ test("a shopper watches a concierge request and manages it from their alerts", a
   await ask.getByRole("link", { name: "See alerts" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Alerts" })).toBeVisible();
   await expect(page.getByRole("link", { name: /^Alerts/ })).toBeVisible(); // the bell
-  await expect(page.getByText("No matches yet", { exact: true })).toBeVisible();
+  await expect(page.getByText("No matches yet", { exact: true }).first()).toBeVisible();
   await expectAccessible(page, "alerts");
   const list = page.locator("#watches");
   await expect(list.getByText("“Croissants for 2 people under $8”")).toBeVisible();

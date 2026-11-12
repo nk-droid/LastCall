@@ -19,7 +19,7 @@ import { useAnnounce } from "@/components/announcer";
 import { AllergenTags, PriceTag } from "@/components/commerce";
 import { ProductImage } from "@/components/product-image";
 import { PageShell } from "@/components/site";
-import { EmptyState, ErrorState, FilterChip, InfoTip, LoadingBlock, PageHeader, QuantityStepper, SectionCard, StatusChip, brand, surface, shadows, tones, type Tone } from "@/components/ui";
+import { EmptyState, ErrorState, FilterChip, InfoTip, LoadingBlock, MetaRow, PageHeader, QuantityStepper, SectionCard, StatusChip, brand, surface, shadows, tones, type Tone } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { ago, money } from "@/lib/format";
 import type { Allergens, CatalogItem, Quote, Slot } from "@/lib/types";
@@ -117,9 +117,7 @@ export function Browse({ slug }: { slug: string }) {
         }
         chips={
           catalog.data ? (
-            <Typography variant="body2" color="text.secondary">
-              {items.length} items · updated {ago(catalog.data.as_of)}
-            </Typography>
+            <MetaRow items={[`${items.length} items`, `Updated ${ago(catalog.data.as_of)}`]} />
           ) : null
         }
       />
@@ -219,7 +217,7 @@ export function Browse({ slug }: { slug: string }) {
               <Paper elevation={0} sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2, px: 2.25, py: 1.5, borderRadius: "20px", boxShadow: shadows.floating }}>
                 <Box>
                   <Typography variant="caption" color="text.secondary">
-                    {units} {units === 1 ? "item" : "items"} · estimated
+                    {units} {units === 1 ? "item" : "items"}, estimated
                   </Typography>
                   <Typography variant="h4" component="p" className="tabular">
                     {money(total)}

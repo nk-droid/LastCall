@@ -288,7 +288,7 @@ def test_each_reply_shows_what_was_understood_and_how_each_shop_was_judged(clien
     details = reply["details"]
 
     chips = {c["key"]: c for c in details["understood"]}
-    assert chips["party_size"]["label"] == "4 people · snacks" and chips["party_size"]["editable"]
+    assert chips["party_size"]["label"] == "4 people, snacks" and chips["party_size"]["editable"]
     assert chips["budget"]["label"] == "Under $10.00"
     assert chips["exclusion:tree_nuts"]["strict"] and chips["exclusion:peanuts"]["strict"] and not chips["exclusion:peanuts"]["editable"]
     assert chips["pickup"]["label"] == "Any pickup time"  # no time was asked for

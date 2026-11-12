@@ -63,7 +63,7 @@ test("guest journey with a live substitution, PayPal payment and pickup handoff"
   const codeLabel = await page.locator("[aria-label^='Pickup code']").getAttribute("aria-label");
   const code = (codeLabel ?? "").replace(/\D/g, "");
   expect(code).toHaveLength(4);
-  await expect(page.getByText("Paid · verified with PayPal")).toBeVisible();
+  await expect(page.getByText("Paid and verified with PayPal")).toBeVisible();
   await expectAccessible(page, "pickup pass");
 
   // Staff: the paid order is in the queue; mark ready, reject a wrong code, accept the right one.

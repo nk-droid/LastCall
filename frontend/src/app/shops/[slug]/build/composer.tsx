@@ -122,9 +122,9 @@ function FieldChip({ tone, label, status, onRemove }: { tone: Tone; label: strin
       <span>
         {label}
         {status ? (
-          <Box component="span" sx={{ fontWeight: 500 }}>
-            {" "}
-            · {status}
+          <Box component="span" sx={{ fontWeight: 500, ml: 0.75 }}>
+            <span className="sr-only">, </span>
+            {status}
           </Box>
         ) : null}
       </span>
@@ -319,7 +319,7 @@ export function Composer({ slug }: { slug: string }) {
                     }
                   }}
                   placeholder="e.g. snacks for 4 people, under $18, no nuts, pickup after 5"
-                  helperText="Optional · Ctrl/⌘ + Enter to search · no personal details"
+                  helperText="Optional. Ctrl/⌘ + Enter to search. No personal details."
                   slotProps={{ htmlInput: { maxLength: 600 } }}
                 />
                 <Stack direction="row" spacing={1.25} useFlexGap role="group" aria-label="Suggested requests" sx={{ flexWrap: "wrap", mt: 2.5 }}>

@@ -192,7 +192,7 @@ def _invoice_body(merchant: Merchant, invoice: FeeInvoice) -> dict[str, Any]:
             when = datetime.fromisoformat(line["accrued_at"].replace("Z", "+00:00")).astimezone(tz).strftime("%b %-d")
             at_rate = (line["basis_minor"] * line["rate_bps"] + 5000) // 10000
             how = "minimum fee" if at_rate < line["min_minor"] else f"{Decimal(line['rate_bps']) / 100:g}% of {format_money(line['basis_minor'], cur)} items"
-            items.append({"name": f"Order {line['order_number']}"[:200], "description": f"{when} · {how}"[:1000], "quantity": "1",
+            items.append({"name": f"Order {line['order_number']}"[:200], "description": f"{when}: {how}"[:1000], "quantity": "1",
                           "unit_amount": {"currency_code": cur, "value": to_decimal_string(line["delta_minor"], cur)}})
     body: dict[str, Any] = {
         "detail": {"invoice_number": invoice.number, "currency_code": cur, "payment_term": {"term_type": "NET_15"}, "reference": merchant.slug[:120],

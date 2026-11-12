@@ -173,7 +173,7 @@ function AddProductDialog({ rows, onClose, onCreated }: { rows: InventoryRow[]; 
             <Button size="small" variant="outlined" color="inherit" startIcon={<UploadRounded />} loading={uploading} disabled={busy} onClick={() => fileRef.current?.click()}>
               {photo ? "Replace photo" : "Upload photo"}
             </Button>
-            <Typography variant="caption" color="text.secondary">JPEG, PNG or WebP · up to 8 MB</Typography>
+            <Typography variant="caption" color="text.secondary">JPEG, PNG or WebP, up to 8 MB</Typography>
           </Stack>
         </Box>
 
@@ -217,7 +217,7 @@ function AddProductDialog({ rows, onClose, onCreated }: { rows: InventoryRow[]; 
         </FormControl>
         <FormControlLabel control={<Checkbox checked={verified} onChange={(e) => setVerified(e.target.checked)} />}
           label={<><Typography component="span" sx={{ fontWeight: 650 }}>I&apos;ve checked this allergen record</Typography>
-            <Typography component="span" variant="body2" color="text.secondary"> · unchecked items are never offered to shoppers with a strict allergy</Typography></>} />
+            {" "}<Typography component="span" variant="body2" color="text.secondary" sx={{ display: "block" }}>Unchecked items are never offered to shoppers with a strict allergy</Typography></>} />
 
         <TextField label="Ingredients" fullWidth multiline minRows={2} value={f.ingredients} onChange={set("ingredients")} />
         <TextField label="Short description" fullWidth multiline minRows={2} value={f.description} onChange={set("description")} slotProps={{ htmlInput: { maxLength: 600 } }} />

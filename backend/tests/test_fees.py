@@ -85,7 +85,7 @@ def test_each_week_the_shop_gets_one_paypal_invoice_and_paying_it_is_recorded(ap
     assert (invoice.status, invoice.amount_minor, invoice.orders, invoice.recipient_email) == ("SENT", 75, 2, "owner@juniper-rye.com")  # $0.50 + $0.25
     sent = paypal.invoices[invoice.paypal_invoice_id]
     assert sent["amount"]["value"] == "0.75" and sent["invoicer"] == {"business_name": "LastCall"}
-    assert [(i["unit_amount"]["value"], i["description"].split(" · ")[1]) for i in sent["items"]] == [("0.50", "10% of $5.00 items"), ("0.25", "minimum fee")]
+    assert [(i["unit_amount"]["value"], i["description"].split(": ", 1)[1]) for i in sent["items"]] == [("0.50", "10% of $5.00 items"), ("0.25", "minimum fee")]
     assert _fee(first["order_id"]).billed_minor == 50 and _fee(second["order_id"]).billed_minor == 25
 
     shop = ok(owner.get("/api/merchant/shop"))["fees"]

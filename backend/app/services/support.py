@@ -43,6 +43,12 @@ CAPTURE_WORDS = {"COMPLETED": "Paid", "PENDING": "Pending", "DECLINED": "Decline
 REFUND_WORDS = {"COMPLETED": "Refunded", "PENDING": "On its way", "FAILED": "Failed", "CANCELLED": "Cancelled"}
 
 
+def _check(label: str, status: str, detail: str | None, when: str | None) -> dict[str, str]:
+    """One fact the shop sees under the draft: "Paid: $13.50 on Nov 8, 9:02 AM"."""
+    value = status + (f": {detail}" if detail else "") + (f" on {when}" if when else "")
+    return {"label": label, "status": status, "value": value}
+
+
 class CheckArgs(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -154,18 +160,17 @@ def _check_paypal(ctx, args: CheckArgs) -> dict[str, Any]:
         result["capture"] = {"status": capture.get("status"), "amount": amount, "pending_reason": reason,
                              "created": _when(capture.get("create_time"), tz), "updated": _when(capture.get("update_time"), tz)}
         word = CAPTURE_WORDS.get(capture.get("status", ""), (capture.get("status") or "").title())
-        checks.append({"label": "Payment", "value": " · ".join(x for x in (f"{word}{f' ({reason.lower()})' if reason else ''}", amount,
-                                                                             _when(capture.get("create_time"), tz)) if x)})
+        checks.append(_check("Payment", f"{word}{f' ({reason.lower()})' if reason else ''}", amount, _when(capture.get("create_time"), tz)))
         ctx.state["amounts"].add(amount)
     else:
-        checks.append({"label": "Payment", "value": f"Not charged · PayPal order {(order.get('status') or '').lower()}"})
+        checks.append(_check("Payment", "Not charged", f"PayPal order {(order.get('status') or '').lower()}", None))
     result["refunds"] = []
     for refund in refunds:
         amount = _money(refund.get("amount"))
         result["refunds"].append({"status": refund.get("status"), "amount": amount, "created": _when(refund.get("create_time"), tz),
                                   "updated": _when(refund.get("update_time"), tz)})
         word = REFUND_WORDS.get(refund.get("status", ""), (refund.get("status") or "").title())
-        checks.append({"label": "Refund", "value": " · ".join(x for x in (word, amount, _when(refund.get("update_time") or refund.get("create_time"), tz)) if x)})
+        checks.append(_check("Refund", word, amount, _when(refund.get("update_time") or refund.get("create_time"), tz)))
         ctx.state["amounts"].add(amount)
     ctx.state["checks"] = checks
     return result

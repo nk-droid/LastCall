@@ -295,7 +295,7 @@ def select_options(scored: list[ScoredBundle]) -> list[tuple[str, str, ScoredBun
     options: list[tuple[str, str, ScoredBundle]] = []
     cheapest = sorted(scored, key=lambda b: (b.total_minor, -b.total_score, b.key))
     if cheapest[0].total_minor >= best.total_minor:
-        options.append(("best_fit", "Best fit · lowest price", best))
+        options.append(("best_fit", "Best fit, lowest price", best))
     else:
         options.append(("best_fit", "Best fit", best))
         budget = next((b for b in cheapest if _distinct_enough(b, [best])), None)

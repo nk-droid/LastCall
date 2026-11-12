@@ -21,7 +21,7 @@ import { useAccount } from "@/components/account";
 import { ConciergeHome } from "@/components/concierge/concierge-home";
 import { ProductImage } from "@/components/product-image";
 import { PageShell } from "@/components/site";
-import { ErrorState, IconBadge, LoadingBlock, StatusChip, brand, shadows, type Icon } from "@/components/ui";
+import { ErrorState, IconBadge, LoadingBlock, MetaRow, StatusChip, brand, shadows, type Icon } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { money, plural } from "@/lib/format";
 import type { MerchantCard, MyOrdersResponse, PickupStatus } from "@/lib/types";
@@ -47,9 +47,7 @@ export function Marketplace() {
             Shops near you
           </Typography>
           {shops.data ? (
-            <Typography variant="body2" color="text.secondary">
-              {plural(list.length, "shop")} · {openNow} open for pickup now
-            </Typography>
+            <MetaRow items={[plural(list.length, "shop"), `${openNow} open for pickup now`]} />
           ) : null}
         </Stack>
         {shops.error && !shops.data ? (
@@ -81,15 +79,14 @@ function pickupChip(p: PickupStatus) {
     case "no_surplus":
       return <StatusChip tone="neutral" icon={RemoveShoppingCartRounded} label="Sold out for today" />;
     case "closed_for_today":
-      return <StatusChip tone="neutral" icon={EventBusyRounded} label={p.next_slot ? `Closed · next ${p.next_slot.label.split("–")[0]}` : "Closed for today"} />;
+      return <StatusChip tone="neutral" icon={EventBusyRounded} label={p.next_slot ? `Closed, opens ${p.next_slot.label.split("–")[0].replace(/^(Today|Tomorrow)\b/, (w) => w.toLowerCase())}` : "Closed for today"} />;
     default:
       return <StatusChip tone="neutral" icon={EventBusyRounded} label="No pickup available" />;
   }
 }
 
-function CategoryIcon({ category }: { category: string }) {
-  const sx = { fontSize: 16, color: brand.leaf };
-  return /caf[eé]/i.test(category) ? <LocalCafeRounded aria-hidden sx={sx} /> : <BakeryDiningRounded aria-hidden sx={sx} />;
+function categoryIcon(category: string): Icon {
+  return /caf[eé]/i.test(category) ? LocalCafeRounded : BakeryDiningRounded;
 }
 
 function ShopCard({ shop }: { shop: MerchantCard }) {
@@ -97,7 +94,7 @@ function ShopCard({ shop }: { shop: MerchantCard }) {
   const sellable = shop.surplus.items_available > 0;
   const saving = shop.max_saving_percent > 0 ? shop.max_saving_percent : null;
   const from = sellable && shop.from_minor !== null ? `from ${money(shop.from_minor, shop.currency)}` : null;
-  const stock = sellable ? `${plural(shop.surplus.items_available, "item")} · ${shop.surplus.units_available} left` : null;
+  const stock = sellable ? [plural(shop.surplus.items_available, "item"), `${shop.surplus.units_available} left`] : null;
   return (
     <Card component="article" aria-labelledby={headingId} sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <Box aria-hidden sx={{ display: "flex", gap: 1.25, alignItems: "center", minHeight: 80, px: 2.75, pt: 2.75 }}>
@@ -113,19 +110,14 @@ function ShopCard({ shop }: { shop: MerchantCard }) {
         )}
       </Box>
       <CardContent sx={{ flex: 1, display: "flex", flexDirection: "column", gap: 1.75 }}>
-        <Typography variant="caption" color="text.secondary" sx={{ display: "flex", alignItems: "center", gap: 0.75, fontWeight: 600 }}>
-          <CategoryIcon category={shop.category} />
-          {shop.category}
-          {shop.neighborhood ? (
-            <>
-              <Box component="span" aria-hidden>
-                ·
-              </Box>
-              <LocationOnRounded aria-hidden sx={{ fontSize: 15 }} />
-              {shop.neighborhood}
-            </>
-          ) : null}
-        </Typography>
+        <MetaRow
+          variant="caption"
+          sx={{ fontWeight: 600 }}
+          items={[
+            { label: shop.category, icon: categoryIcon(shop.category) },
+            shop.neighborhood ? { label: shop.neighborhood, icon: LocationOnRounded } : null,
+          ]}
+        />
         <Box>
           <Typography id={headingId} component="h3" variant="h3">
             <Link href={`/shops/${shop.slug}`} underline="hover" color="inherit">
@@ -140,22 +132,19 @@ function ShopCard({ shop }: { shop: MerchantCard }) {
         {saving || from || stock ? (
           <Box className="tabular">
             {saving || from ? (
-              <Typography variant="body2" color="text.secondary" sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: 1 }}>
-                {saving ? (
-                  <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, color: brand.leafDark, fontWeight: 650 }}>
-                    <LocalOfferRounded aria-hidden sx={{ fontSize: 16 }} />
-                    Up to {saving}% off
-                  </Box>
-                ) : null}
-                {saving && from ? <span aria-hidden>·</span> : null}
-                {from}
-              </Typography>
+              <MetaRow
+                items={[
+                  saving ? (
+                    <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, color: brand.leafDark, fontWeight: 650 }}>
+                      <LocalOfferRounded aria-hidden sx={{ fontSize: 16 }} />
+                      Up to {saving}% off
+                    </Box>
+                  ) : null,
+                  from,
+                ]}
+              />
             ) : null}
-            {stock ? (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {stock}
-              </Typography>
-            ) : null}
+            {stock ? <MetaRow items={stock} sx={{ mt: 0.5 }} /> : null}
           </Box>
         ) : null}
         <Button
@@ -199,9 +188,12 @@ function ActiveOrders() {
                   {o.merchant.name}
                 </Typography>
                 <OrderStatusChip status={o.status} />
-                <Typography component="span" variant="caption" color="text.secondary" className="tabular">
-                  #{o.number} · {o.pickup.date_label}, {o.pickup.label}
-                </Typography>
+                <MetaRow
+                  component="span"
+                  variant="caption"
+                  sx={{ fontVariantNumeric: "tabular-nums" }}
+                  items={[`#${o.number}`, { label: `${o.pickup.date_label}, ${o.pickup.label}`, icon: ScheduleRounded }]}
+                />
               </CardActionArea>
             </Card>
           </li>

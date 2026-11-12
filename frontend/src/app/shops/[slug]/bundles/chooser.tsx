@@ -48,7 +48,7 @@ import { useAnnounce } from "@/components/announcer";
 import { AllergenTags, PriceBreakdown } from "@/components/commerce";
 import { ProductImage } from "@/components/product-image";
 import { FlowSteps, PageShell } from "@/components/site";
-import { EmptyState, ErrorState, FactChip, IconBadge, InfoTip, PageHeader, SlowNotice, StatusChip, brand, surface, tones, type Icon } from "@/components/ui";
+import { EmptyState, ErrorState, FactChip, IconBadge, InfoTip, MetaRow, PageHeader, SlowNotice, StatusChip, brand, surface, tones, type Icon } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { flow, useFlowSnapshot } from "@/lib/flow";
 import { ALLERGEN_LABEL, hhmmLabel, money, timeLabel } from "@/lib/format";
@@ -263,9 +263,7 @@ export function BundleChooser({ slug }: { slug: string }) {
       {data && data.options.length ? (
         <>
           <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", mb: 3 }}>
-            <Typography variant="body2" color="text.secondary">
-              Stock checked {timeLabel(data.inventory_as_of, zone)}{data.ai.used ? " · explanations written by AI" : ""}
-            </Typography>
+            <MetaRow items={[`Stock checked ${timeLabel(data.inventory_as_of, zone)}`, data.ai.used ? "Explanations written by AI" : null]} />
             <InfoTip
               label="About these bundles"
               title={
@@ -382,9 +380,7 @@ function BundleCard({ option, budget, busy, onChoose }: {
             <Typography id={titleId} variant="h4" component="h2">
               {option.label}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {option.units} items{sweet && savory ? ` · ${sweet} sweet, ${savory} savory` : ""}
-            </Typography>
+            <MetaRow items={[`${option.units} items`, sweet && savory ? `${sweet} sweet, ${savory} savory` : null]} />
           </Box>
           {option.origin === "ai_candidate" ? <StatusChip tone="info" icon={AutoAwesomeRounded} label="AI pick" /> : null}
         </Stack>
@@ -394,7 +390,7 @@ function BundleCard({ option, budget, busy, onChoose }: {
             {money(totals.total_minor, currency)}
           </Typography>
           {totals.discount_minor > 0 ? (
-            <StatusChip tone="success" icon={SavingsRounded} label={`Save ${money(totals.discount_minor, currency)}${percentOff ? ` · ${percentOff}%` : ""}`} />
+            <StatusChip tone="success" icon={SavingsRounded} label={`Save ${money(totals.discount_minor, currency)}${percentOff ? ` (${percentOff}%)` : ""}`} />
           ) : null}
         </Stack>
 
@@ -406,14 +402,25 @@ function BundleCard({ option, budget, busy, onChoose }: {
                 <Typography variant="body2" sx={{ fontWeight: 650, lineHeight: 1.35 }}>
                   {line.qty} × {line.name}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" component="p" className="tabular">
-                  {money(line.unit_sale_minor)} each{" "}
-                  <Box component="s" sx={{ ml: 0.25 }}>
-                    <span className="sr-only">regular price </span>
-                    {money(line.unit_reference_minor)}
-                  </Box>
-                  {line.stock_limited ? ` · last ${line.available} listed today` : ""}
-                </Typography>
+                <MetaRow
+                  variant="caption"
+                  component="p"
+                  sx={{ fontVariantNumeric: "tabular-nums" }}
+                  items={[
+                    {
+                      label: (
+                        <span>
+                          {money(line.unit_sale_minor)} each{" "}
+                          <Box component="s" sx={{ ml: 0.25 }}>
+                            <span className="sr-only">regular price </span>
+                            {money(line.unit_reference_minor)}
+                          </Box>
+                        </span>
+                      ),
+                    },
+                    line.stock_limited ? `Last ${line.available} listed today` : null,
+                  ]}
+                />
               </Box>
               <Typography variant="body2" className="tabular" sx={{ fontWeight: 650 }}>
                 {money(line.line_total_minor)}
@@ -434,9 +441,9 @@ function BundleCard({ option, budget, busy, onChoose }: {
                     <Typography variant="body2">
                       {fit.label}
                       {fit.source ? (
-                        <Box component="span" sx={{ color: "text.secondary" }}>
-                          {" "}
-                          · {fit.source}
+                        <Box component="span" sx={{ color: "text.secondary", ml: 0.75 }}>
+                          <span className="sr-only">, </span>
+                          {fit.source}
                         </Box>
                       ) : null}
                     </Typography>
@@ -474,7 +481,7 @@ function BundleCard({ option, budget, busy, onChoose }: {
               Details
             </Typography>
             <Typography variant="caption" color="text.secondary" component="span" sx={{ display: { xs: "none", sm: "inline" } }}>
-              Why these items · allergens · price
+              Why these items, allergens and price
             </Typography>
           </AccordionSummary>
           <AccordionDetails sx={{ px: 2 }}>
@@ -484,9 +491,12 @@ function BundleCard({ option, budget, busy, onChoose }: {
                   Why these items
                 </Typography>
                 <Typography variant="body2">{option.rationale.text}</Typography>
-                <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.5 }}>
-                  {option.rationale.source === "ai" ? "Written by AI, checked by LastCall · " : ""}{option.why}
-                </Typography>
+                <MetaRow
+                  variant="caption"
+                  component="p"
+                  sx={{ mt: 0.5 }}
+                  items={[option.rationale.source === "ai" ? { label: "Written by AI, checked by LastCall", icon: AutoAwesomeRounded } : null, option.why]}
+                />
                 <ScoreBreakdown components={option.score.components} />
               </Box>
               <Box>
@@ -532,7 +542,7 @@ function BundleCard({ option, budget, busy, onChoose }: {
           >
             {option.pickup_slots.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.label} · {s.remaining} left
+                {s.label} ({s.remaining} left)
               </option>
             ))}
           </TextField>
@@ -604,7 +614,7 @@ function ScoreBreakdown({ components }: { components: BundleOption["score"]["com
                   {label}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" className="tabular">
-                  {Math.round(c.score * 100)}% · weight {Math.round(c.weight * 100)}%
+                  {Math.round(c.score * 100)}% (weight {Math.round(c.weight * 100)}%)
                 </Typography>
               </Stack>
               <LinearProgress variant="determinate" value={Math.max(0, Math.min(100, c.score * 100))} aria-label={`${label} score`} sx={{ height: 5, my: 0.5 }} />

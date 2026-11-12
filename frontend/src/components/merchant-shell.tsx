@@ -219,7 +219,7 @@ function ShopSwitcher({ account, onSwitched }: { account: Account; onSwitched: (
       <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
         {account.memberships.map((m) => (
           <MenuItem key={m.shop.id} selected={m.shop.id === current.shop.id} onClick={() => choose(m.shop.id)}>
-            <ListItemText primary={m.shop.name} secondary={`${m.role[0].toUpperCase()}${m.role.slice(1)} · ${m.shop.status.replace("_", " ")}`} />
+            <ListItemText primary={m.shop.name} secondary={`${m.role[0].toUpperCase()}${m.role.slice(1)}, ${m.shop.status.replace("_", " ")}`} />
           </MenuItem>
         ))}
       </Menu>

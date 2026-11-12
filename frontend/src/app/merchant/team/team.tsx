@@ -123,7 +123,7 @@ export function TeamPage() {
   // You first, then owners, managers and staff.
   const members = t ? [...t.members].sort((a, b) => Number(b.user_id === t.you) - Number(a.user_id === t.you)
     || ROLES.indexOf(b.role) - ROLES.indexOf(a.role) || a.name.localeCompare(b.name)) : [];
-  const count = t ? [plural(t.members.length, "member"), t.invites.length ? `${t.invites.length} invited` : null].filter(Boolean).join(" · ") : undefined;
+  const count = t ? [plural(t.members.length, "member"), t.invites.length ? `${t.invites.length} invited` : null].filter(Boolean).join(", ") : undefined;
 
   return (
     <>
@@ -259,7 +259,7 @@ function MemberRow({ m, you, owner, soleOwner, canRemove, busy, onRole, onReset,
       </TableCell>
       <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
         {soleOwner ? (
-          <Typography variant="body2" color="text.secondary">Only owner · can&apos;t be removed</Typography>
+          <Typography variant="body2" color="text.secondary">Only owner, can&apos;t be removed</Typography>
         ) : (
           <Stack direction="row" spacing={1} sx={{ justifyContent: "flex-end" }}>
             {owner && !you ? (
@@ -292,7 +292,7 @@ function InviteRow({ i, canManage, busy, onResend, onWithdraw }: {
           } />
       </TableCell>
       <TableCell><FactChip label={i.role_label} /></TableCell>
-      <TableCell><StatusChip tone="warning" icon={MailOutlineRounded} label={`Invited · ${expiresIn(i.expires_at)}`} /></TableCell>
+      <TableCell><StatusChip tone="warning" icon={MailOutlineRounded} label={`Invited, ${expiresIn(i.expires_at)}`} /></TableCell>
       <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
         {canManage ? (
           <Stack direction="row" spacing={1} sx={{ justifyContent: "flex-end" }}>

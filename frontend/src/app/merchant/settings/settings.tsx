@@ -116,22 +116,22 @@ function summary(key: SectionKey, s: ShopSettings): { status: string; tone?: Ton
   const p = s.policies;
   switch (key) {
     case "profile":
-      return { status: [s.shop.category, s.shop.address.city].filter(Boolean).join(" · ") || "Name, address and contact" };
+      return { status: [s.shop.category, s.shop.address.city].filter(Boolean).join(", ") || "Name, address and contact" };
     case "pickup": {
       if (s.pickup_paused) return { status: "Pickup paused", tone: "warning" };
       const days = WEEKDAYS.filter((d) => s.pickup.windows[d.key]).length;
       if (!days) return { status: "No pickup days", tone: "warning" };
-      return { status: `${days === 7 ? "Pickup every day" : `Pickup ${plural(days, "day")} a week`} · ${s.pickup.slot_minutes}-min slots` };
+      return { status: `${days === 7 ? "Pickup every day" : `Pickup ${plural(days, "day")} a week`}, ${s.pickup.slot_minutes}-min slots` };
     }
     case "rules":
-      return { status: `${Math.round(p.reservation_ttl_seconds / 60)}-min hold · cancel ${p.cancellation_cutoff_minutes} min before` };
+      return { status: `${Math.round(p.reservation_ttl_seconds / 60)}-min hold, cancel ${p.cancellation_cutoff_minutes} min before` };
     case "policies": {
       const review = reviewState(s);
       return { status: review.label, tone: review.current ? undefined : "warning" };
     }
     case "payouts": {
       const connected = s.payouts.status === "connected";
-      return { status: `${connected ? "PayPal connected" : "PayPal not connected"} · ${p.fees_minor ? `${money(p.fees_minor)} service fee` : "no service fee"}`, tone: connected ? undefined : "warning" };
+      return { status: `${connected ? "PayPal connected" : "PayPal not connected"}, ${p.fees_minor ? `${money(p.fees_minor)} service fee` : "no service fee"}`, tone: connected ? undefined : "warning" };
     }
   }
 }

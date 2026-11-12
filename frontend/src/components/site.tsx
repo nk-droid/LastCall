@@ -164,7 +164,7 @@ export function FlowSteps({ active }: { active: 0 | 1 | 2 | 3 | 4 }) {
     <Box component="nav" aria-label="Checkout progress" sx={{ mb: { xs: 2.5, sm: 4 } }}>
       <Box sx={{ display: { xs: "block", sm: "none" } }}>
         <Typography variant="body2" sx={{ fontWeight: 650, color: "text.secondary", mb: 0.75 }}>
-          Step {active + 1} of {FLOW.length} ·{" "}
+          Step {active + 1} of {FLOW.length}:{" "}
           <Box component="span" sx={{ color: "text.primary" }}>
             {FLOW[active]}
           </Box>

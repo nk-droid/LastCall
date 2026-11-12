@@ -7,7 +7,7 @@ import { ExpandLessRounded, ExpandMoreRounded } from "@mui/icons-material";
 import { Box, Button, Collapse, Stack, Typography } from "@mui/material";
 import { useId, useState } from "react";
 
-import { brand, tones } from "@/components/ui";
+import { MetaRow, brand, tones } from "@/components/ui";
 import { money, plural } from "@/lib/format";
 import type { ConciergeDetails } from "@/lib/types";
 
@@ -42,7 +42,7 @@ export function HowWePicked({ details, defaultOpen = false }: { details: Concier
       </Button>
       <Collapse in={open} id={regionId}>
         <Box component="ol" sx={{ listStyle: "none", m: 0, px: 2, pb: 2, pt: 0.5, display: "grid", gap: 1.5 }}>
-          <Step n={++n} title="Read your request">{details.understood.map((u) => u.label).join(" · ") || "Your message"}</Step>
+          <Step n={++n} title="Read your request">{details.understood.map((u) => u.label).join(", ") || "Your message"}</Step>
           <Step n={++n} title={`Checked ${plural(checked.length, "shop")}${details.listed && details.listed > checked.length ? ` of ${details.listed} open` : ""}`}>
             {skipped.length ? skipped.map((s) => <Box key={s.slug}>Skipped {s.name}: {s.reason}</Box>) : "Each one had something that fits."}
           </Step>
@@ -61,7 +61,12 @@ export function HowWePicked({ details, defaultOpen = false }: { details: Concier
               <Stack spacing={0.75} sx={{ mt: 0.75 }}>
                 {fitting.map((s) => (
                   <Box key={s.slug} sx={{ display: "flex", justifyContent: "space-between", gap: 1, px: 1.25, py: 0.9, borderRadius: "10px", bgcolor: s.top ? brand.mint : brand.sand, color: brand.forest, fontWeight: s.top ? 700 : 500 }}>
-                    <span>{s.name}{s.shown_units ? ` · ${plural(s.shown_units, "item")}` : ` · ${plural(s.options, "bundle")}`}{s.top ? " · top pick" : ""}</span>
+                    <MetaRow
+                      component="span"
+                      color="inherit"
+                      sx={{ fontWeight: "inherit", lineHeight: "inherit", minWidth: 0 }}
+                      items={[s.name, s.shown_units ? plural(s.shown_units, "item") : plural(s.options, "bundle"), s.top ? "Top pick" : null]}
+                    />
                     <span className="tabular">{s.shown_total_minor !== null ? money(s.shown_total_minor, s.currency) : s.from_minor !== null ? `from ${money(s.from_minor, s.currency)}` : ""}</span>
                   </Box>
                 ))}

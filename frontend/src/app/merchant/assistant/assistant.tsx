@@ -96,11 +96,11 @@ function AssistantTabs({ a, selected, onSelect }: { a: Activity; selected: Key; 
     {
       key: "ask", icon: <ForumRounded />, tone: "success", name: "Ask LastCall", state: cc.listed ? "On" : "Off",
       status: !cc.listed ? "Your shop is hidden"
-        : `${plural(cc.suggested_today, "suggestion")} today${cc.ordered_week ? ` · ${plural(cc.ordered_week, "order")} this week` : ""}`,
+        : `${plural(cc.suggested_today, "suggestion")} today${cc.ordered_week ? `, ${plural(cc.ordered_week, "order")} this week` : ""}`,
     },
     {
       key: "watch", icon: <NotificationsActiveRounded />, tone: "info", name: "Watch alerts", state: "On",
-      status: `${plural(w.alerts_today, "alert")} today · ${w.watching} watching`,
+      status: `${plural(w.alerts_today, "alert")} today, ${w.watching} watching`,
     },
     {
       key: "support", icon: <SupportAgentRounded />, tone: "neutral", name: "Support replies", state: "On",

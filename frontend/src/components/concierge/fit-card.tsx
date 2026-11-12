@@ -16,7 +16,7 @@ import type { ConciergeCard } from "@/lib/types";
 import { useHold } from "./bundle-card";
 
 export function bundleTitle(card: ConciergeCard): string {
-  return card.lines.map((line) => `${line.qty} × ${line.name}`).join(" · ");
+  return card.lines.map((line) => `${line.qty} × ${line.name}`).join(", ");
 }
 
 /** Biggest quantity first, so the bulk of the bundle reads first. */

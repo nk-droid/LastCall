@@ -13,8 +13,10 @@ import {
   Inventory2Rounded,
   KeyRounded,
   PaymentsRounded,
+  PersonRounded,
   ReceiptLongRounded,
   ReplayRounded,
+  ScheduleRounded,
   SearchOffRounded,
   SearchRounded,
   SendRounded,
@@ -48,7 +50,7 @@ import { useAnnounce } from "@/components/announcer";
 import { Dialog } from "@/components/dialog";
 import { hasRole, useStaff } from "@/components/merchant-shell";
 import { PaymentPill } from "@/components/status-pills";
-import { EmptyState, ErrorState, FilterChip, InfoList, LoadingBlock, PageHeader, StatusChip, brand, surface, tones, type Icon, type Tone } from "@/components/ui";
+import { EmptyState, ErrorState, FilterChip, InfoList, LoadingBlock, MetaRow, PageHeader, StatusChip, brand, surface, tones, type Icon, type Tone } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { dateTimeLabel, money, timeLabel } from "@/lib/format";
 import type { OrderDetail, OrderSummary, Slot } from "@/lib/types";
@@ -204,7 +206,10 @@ function OrderRow({ o, today, zone, active, last, onOpen }: { o: OrderSummary; t
         <Typography component="span" sx={{ fontWeight: 650, color: "inherit" }}>{timeLabel(o.pickup_starts_at, zone)}</Typography>
       </Box>
       <Box component="span" sx={{ minWidth: 0 }}>
-        <Typography component="span" sx={{ display: "block", fontWeight: 650 }} className="tabular">#{o.number} · {o.customer_name ?? "Customer"}</Typography>
+        <Typography component="span" sx={{ display: "flex", flexWrap: "wrap", columnGap: 1, fontWeight: 650 }} className="tabular">
+          <Box component="span" sx={{ color: "text.secondary" }}>#{o.number}</Box>{" "}
+          <span>{o.customer_name ?? "Customer"}</span>
+        </Typography>
         <Typography component="span" variant="body2" color="text.secondary">{o.units === 1 ? "1 item" : `${o.units} items`}</Typography>
       </Box>
       <Typography component="span" className="tabular" sx={{ fontWeight: 650, textAlign: "right", display: { xs: "none", sm: "block" } }}>{money(o.amount_minor, o.currency)}</Typography>
@@ -291,16 +296,21 @@ function OrderDetailPanel({ orderId, onChanged }: { orderId: string; onChanged: 
     <Stack spacing={2.5}>
       <Stack direction="row" spacing={2} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h3" component="h2" className="tabular">#{d.number} · {d.customer_contact.name ?? "Customer"}</Typography>
-          <Typography variant="body2" color="text.secondary" className="tabular">
-            Pickup {d.pickup_label} · {paid ? "paid via PayPal" : "payment not verified"} · {money(d.amount_minor, d.currency)}
+          <Typography variant="h3" component="h2" className="tabular" sx={{ display: "flex", flexWrap: "wrap", columnGap: 1 }}>
+            <Box component="span" sx={{ color: "text.secondary" }}>#{d.number}</Box>{" "}
+            <span>{d.customer_contact.name ?? "Customer"}</span>
           </Typography>
+          <MetaRow sx={{ fontVariantNumeric: "tabular-nums" }} items={[
+            { label: `Pickup ${d.pickup_label}`, icon: ScheduleRounded },
+            { label: paid ? "Paid via PayPal" : "Payment not verified", icon: PaymentsRounded },
+            money(d.amount_minor, d.currency),
+          ]} />
           {d.platform_fee ? (
-            <Typography variant="body2" color="text.secondary" className="tabular">
-              LastCall fee {money(d.platform_fee.fee_minor, d.platform_fee.currency)} · you keep{" "}
-              <Box component="span" sx={{ fontWeight: 700, color: "text.primary" }}>{money(d.platform_fee.net_minor, d.platform_fee.currency)}</Box>
-              {d.platform_fee.billed ? " · invoiced" : ""}
-            </Typography>
+            <MetaRow sx={{ fontVariantNumeric: "tabular-nums" }} items={[
+              `LastCall fee ${money(d.platform_fee.fee_minor, d.platform_fee.currency)}`,
+              <>You keep <Box component="span" sx={{ fontWeight: 700, color: "text.primary" }}>{money(d.platform_fee.net_minor, d.platform_fee.currency)}</Box></>,
+              d.platform_fee.billed ? "Invoiced" : null,
+            ]} />
           ) : null}
         </Box>
         <StatusChip tone={status.tone} icon={status.icon} label={status.label} size="medium" />
@@ -318,7 +328,7 @@ function OrderDetailPanel({ orderId, onChanged }: { orderId: string; onChanged: 
       {d.exception_flags.length ? (
         <Alert severity="error" role="note">
           <AlertTitle>Needs review</AlertTitle>
-          {d.exception_flags.map((f) => f.replaceAll("_", " ")).join(" · ")}
+          {d.exception_flags.map((f) => f.replaceAll("_", " ")).join(", ")}
         </Alert>
       ) : null}
       {d.pickup_expired && active ? (
@@ -376,7 +386,7 @@ function OrderDetailPanel({ orderId, onChanged }: { orderId: string; onChanged: 
         </Box>
       ) : null}
 
-      <Section title="Items" aside={d.lines.length ? (packed === d.lines.length ? "· all packed" : `· ${packed} of ${d.lines.length} packed`) : undefined}>
+      <Section title="Items" aside={d.lines.length ? (packed === d.lines.length ? "All packed" : `${packed} of ${d.lines.length} packed`) : undefined}>
         <Box component="ul" sx={list}>
           {d.lines.map((line, i) => (
             <Box component="li" key={line.sku} sx={{ display: "flex", alignItems: "center", gap: 1, py: 0.5, borderBottom: i === d.lines.length - 1 ? 0 : `1px solid ${brand.line}` }}>
@@ -397,9 +407,8 @@ function OrderDetailPanel({ orderId, onChanged }: { orderId: string; onChanged: 
 
       {cancelOpen ? (
         <Section title="Wants to cancel" tone="warning">
-          <Typography variant="body2">
-            {d.cancel_request?.reason || "No reason given"} · asked {dateTimeLabel(d.cancel_request?.requested_at, zone)}
-          </Typography>
+          <Typography variant="body2">{d.cancel_request?.reason || "No reason given"}</Typography>
+          <Typography variant="caption" color="text.secondary">Asked {dateTimeLabel(d.cancel_request?.requested_at, zone)}</Typography>
           {manager ? (
             <Stack spacing={1.5} sx={{ mt: 1.5 }}>
               <Button variant="contained" startIcon={<ReplayRounded />} loading={busy === "approve-cancel"} sx={{ alignSelf: "flex-start" }}
@@ -523,7 +532,7 @@ function Records({ d, zone }: { d: OrderDetail; zone?: string }) {
             <Box component="li" key={`${t.at}-${i}`} sx={{ position: "relative", pl: 3, pb: 1.25 }}>
               <Box aria-hidden sx={{ position: "absolute", left: 1, top: 6, width: 10, height: 10, borderRadius: "50%", bgcolor: brand.leaf, boxShadow: `0 0 0 3px ${brand.paper}` }} />
               <Typography variant="body2" sx={{ fontWeight: 650, "&::first-letter": { textTransform: "uppercase" } }}>{t.action.replaceAll("_", " ")}</Typography>
-              <Typography variant="caption" color="text.secondary">{dateTimeLabel(t.at, zone)} · {t.actor}</Typography>
+              <MetaRow variant="caption" items={[dateTimeLabel(t.at, zone), { label: t.actor, icon: PersonRounded }]} />
             </Box>
           ))}
         </Box>
@@ -550,7 +559,7 @@ function SupportReply({ message, onSend, busy }: { message: OrderDetail["support
           {message.ai_draft_source === "rules" ? (
             <StatusChip tone="neutral" icon={DescriptionRounded} label="Template draft" />
           ) : (
-            <StatusChip tone="info" icon={AutoAwesomeRounded} label={message.ai_checks.length ? "AI draft · checked with PayPal" : "AI draft · review before sending"} />
+            <StatusChip tone="info" icon={AutoAwesomeRounded} label={message.ai_checks.length ? "AI draft, checked with PayPal" : "AI draft, review before sending"} />
           )}
           {message.ai_checks.length ? (
             <Box component="dl" aria-label="What PayPal reported" sx={{ m: 0, mt: 1.25, display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 1.5, rowGap: 0.5 }}>

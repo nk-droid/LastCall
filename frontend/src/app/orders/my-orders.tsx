@@ -1,12 +1,12 @@
 "use client";
 
-import { ArrowForwardRounded, ReceiptLongRounded, ScheduleRounded, StorefrontRounded } from "@mui/icons-material";
+import { ArrowForwardRounded, PersonRounded, ReceiptLongRounded, ScheduleRounded, StorefrontRounded } from "@mui/icons-material";
 import { Box, Button, Card, CardContent, Link, Stack, Typography } from "@mui/material";
 import { useId } from "react";
 
 import { Avatar, signInHref, useAccount } from "@/components/account";
 import { PageShell } from "@/components/site";
-import { EmptyState, ErrorState, LoadingBlock, PageHeader, brand } from "@/components/ui";
+import { EmptyState, ErrorState, LoadingBlock, MetaRow, PageHeader, brand } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { money, plural } from "@/lib/format";
 import type { MyOrder, MyOrdersResponse } from "@/lib/types";
@@ -34,8 +34,15 @@ function OrdersView() {
       <PageHeader
         title="My orders"
         subtitle={
-          (customer ? `${customer.name} · all shops` : "Guest · orders from this browser") +
-          (res.data && orders.length ? ` · ${plural(orders.length, "order")} at ${plural(shops, "shop")}` : "")
+          <MetaRow
+            variant="body1"
+            component="span"
+            items={[
+              { label: customer ? customer.name : "Guest", icon: PersonRounded },
+              customer ? "All shops" : "Orders from this browser",
+              res.data && orders.length ? `${plural(orders.length, "order")} at ${plural(shops, "shop")}` : null,
+            ]}
+          />
         }
         actions={
           <Button href="/" variant="outlined" color="inherit" startIcon={<StorefrontRounded />}>
@@ -90,8 +97,8 @@ function OrderSection({ title, orders }: { title: string; orders: MyOrder[] }) {
     <Box component="section" aria-labelledby={headingId}>
       <Typography id={headingId} variant="h4" component="h2" sx={{ mb: 2 }}>
         {title}{" "}
-        <Box component="span" sx={{ color: "text.secondary", fontWeight: 600 }}>
-          · {orders.length}
+        <Box component="span" sx={{ color: "text.secondary", fontWeight: 600, ml: 0.5 }}>
+          {orders.length}
         </Box>
       </Typography>
       <Box component="ul" sx={{ listStyle: "none", m: 0, p: 0, display: "grid", gap: 3, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
@@ -132,11 +139,11 @@ function OrderCard({ order: o }: { order: MyOrder }) {
         <Box>
           <Typography variant="body2" className="tabular" sx={{ display: "flex", alignItems: "center", gap: 0.75, fontWeight: 600 }}>
             <ScheduleRounded aria-hidden sx={{ fontSize: 17, color: brand.leaf }} />
-            {o.pickup.date_label} · {o.pickup.label}
+            {o.pickup.date_label}, {o.pickup.label}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
             {plural(o.units, "item")}
-            {names ? ` · ${names}${more > 0 ? ` +${more} more` : ""}` : ""}
+            {names ? `: ${names}${more > 0 ? ` +${more} more` : ""}` : ""}
           </Typography>
         </Box>
         <Box sx={{ mt: "auto" }}>

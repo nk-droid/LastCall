@@ -8,7 +8,7 @@ import { useState } from "react";
 
 import { signInHref, useAccount } from "@/components/account";
 import { useAnnounce } from "@/components/announcer";
-import { EmptyState, LoadingBlock, SectionCard, StatusChip, brand, surface } from "@/components/ui";
+import { EmptyState, LoadingBlock, MetaRow, SectionCard, StatusChip, brand, surface } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { ago } from "@/lib/format";
 import type { Watch } from "@/lib/types";
@@ -111,9 +111,15 @@ export function WatchList() {
                     {w.shop ? <Chip size="small" icon={<StorefrontRounded />} label={w.shop.name} /> : <Chip size="small" label="Any shop" />}
                     {w.facts.map((f) => <Chip key={f} size="small" variant="outlined" label={f} />)}
                   </Stack>
-                  <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.75 }}>
-                    {w.matches_sent ? `${w.matches_sent} sent · last ${ago(w.last_notified_at)}` : "No matches yet"} · {w.status === "expired" ? "ended" : `ends ${new Date(w.expires_at).toLocaleDateString()}`}
-                  </Typography>
+                  <MetaRow
+                    variant="caption"
+                    component="p"
+                    sx={{ mt: 0.75 }}
+                    items={[
+                      w.matches_sent ? `${w.matches_sent} sent, last ${ago(w.last_notified_at)}` : "No matches yet",
+                      w.status === "expired" ? "Ended" : `Ends ${new Date(w.expires_at).toLocaleDateString()}`,
+                    ]}
+                  />
                 </Box>
                 <Stack direction="row" spacing={0.5}>
                   {w.status === "active" ? (

@@ -13,10 +13,10 @@ const inter = Inter({ variable: "--font-inter", subsets: ["latin"], display: "sw
 const heading = Plus_Jakarta_Sans({ variable: "--font-heading", subsets: ["latin"], display: "swap", weight: ["600", "700", "800"] });
 
 export const metadata: Metadata = {
-  title: { default: "LastCall · Surplus bundles from local shops", template: "%s · LastCall" },
+  title: { default: "LastCall: Surplus bundles from local shops", template: "%s | LastCall" },
   description: "Tell a local bakery or café what you need and get a verified bundle of today's surplus, ready for pickup. Payments by PayPal.",
   applicationName: "LastCall",
-  openGraph: { type: "website", siteName: "LastCall", title: "LastCall · Surplus bundles from local shops",
+  openGraph: { type: "website", siteName: "LastCall", title: "LastCall: Surplus bundles from local shops",
                description: "Today's surplus from local bakeries and cafés, bundled for what you need and ready for pickup." },
 };
 

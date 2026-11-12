@@ -65,12 +65,12 @@ def activity(ctx: StaffContext) -> dict[str, Any]:
             props = e.properties
             status = outcome.get(("proposal", e.entity_id, props.get("option_key")))
             feed.append(_item(e.created_at, "concierge", "Ask LastCall suggested your bundle",
-                              f"{_facts(props.get('request', {}), sep=' · ') or 'A shopper'} · {props.get('units')} items for "
-                              f"{format_money(props.get('total_minor', 0), props.get('currency', 'USD'))}", status, f"suggested:{e.id}"))
+                              _lead(_facts(props.get('request', {}), sep=", "), f"{props.get('units')} items for "
+                                    f"{format_money(props.get('total_minor', 0), props.get('currency', 'USD'))}"), status, f"suggested:{e.id}"))
         for e in skipped.values():
             req = e.properties.get("request", {})
             feed.append(_item(e.created_at, "concierge_skip", "Ask LastCall passed on your shop",
-                              f"{_facts(req, sep=' · ') or 'A shopper'} · {_gap_reason(e.properties.get('gap', 'other'), req)}", None, f"skipped:{e.id}"))
+                              _lead(_facts(req, sep=", "), _gap_reason(e.properties.get('gap', 'other'), req)), None, f"skipped:{e.id}"))
         for m in matches:
             watch = watches.get(m.watch_id)
             facts = _facts(watch.constraints, sep=", ") if watch else ""
@@ -81,7 +81,7 @@ def activity(ctx: StaffContext) -> dict[str, Any]:
             if row.ai_draft_source != "agent":
                 continue
             checks = row.ai_checks or []
-            detail = (f"Checked with PayPal: {' · '.join(c['label'] + ' ' + c['value'].split(' · ')[0].lower() for c in checks)}"
+            detail = (f"Checked with PayPal: {', '.join(c['label'] + ' ' + (c.get('status') or c['value'].split(' · ')[0]).lower() for c in checks)}"
                       if checks else "Answered from the order details")
             status = {"tone": "success", "label": "Sent"} if row.status == "replied" else {"tone": "warning", "label": "Waiting for you"}
             feed.append(_item(row.created_at, "support", f"Drafted a reply for {number}", detail, status, f"support:{row.id}"))
@@ -171,7 +171,7 @@ def _plan_item(plan: AgentProposal, now) -> dict[str, Any]:
              if (n := kinds.get(key))]
     detail = " and ".join([", ".join(parts[:-1]), parts[-1]] if len(parts) > 1 else parts) or "Nothing needed changing"
     if plan.source == "rules":
-        detail += " · simple rules plan"
+        detail += " (simple rules plan)"
     return _item(plan.created_at, "closeout", "Close-out drafted a plan", detail, _plan_status(plan, now), f"plan:{plan.id}",
                  action="review" if _open(plan, now) else None)
 
@@ -244,6 +244,11 @@ def _outcomes(db, events: list[AnalyticsEvent], matches: list[WatchMatch]) -> di
 def _clock(hhmm: str) -> str:
     h, m = (int(x) for x in hhmm.split(":"))
     return f"{h % 12 or 12}{f':{m:02d}' if m else ''} {'AM' if h < 12 else 'PM'}"
+
+
+def _lead(facts: str, rest: str) -> str:
+    """"4 people, no peanuts: 3 items for $9.00"; just the rest, capitalised, when the shopper gave no facts."""
+    return f"{facts}: {rest}" if facts else rest[:1].upper() + rest[1:]
 
 
 def _facts(req: dict[str, Any], *, sep: str) -> str:

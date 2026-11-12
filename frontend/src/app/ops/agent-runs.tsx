@@ -4,11 +4,11 @@
 // model turns and tool calls (each placed where it started within the run), with the chosen step's arguments
 // and result. Arguments and results are stored redacted.
 
-import { AutoAwesomeRounded, ErrorOutlineRounded, RouteRounded, SpeedRounded, TollRounded } from "@mui/icons-material";
+import { AutoAwesomeRounded, BuildRounded, ErrorOutlineRounded, RouteRounded, SpeedRounded, TollRounded } from "@mui/icons-material";
 import { Alert, Box, Grid, ListItemButton, Stack, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { useState } from "react";
 
-import { ErrorState, LoadingBlock, SectionCard, StatTile, StatusChip, brand, tones, type Tone } from "@/components/ui";
+import { ErrorState, LoadingBlock, MetaRow, SectionCard, StatTile, StatusChip, brand, tones, type Tone } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { useResource } from "@/lib/use-api";
@@ -62,7 +62,7 @@ export function AgentRuns() {
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
               <StatTile label="Tokens" value={count(data.stats.input_tokens + data.stats.output_tokens)}
-                caption={`${count(data.stats.input_tokens)} in · ${count(data.stats.output_tokens)} out`} icon={<TollRounded />} tone="neutral" />
+                caption={`${count(data.stats.input_tokens)} in, ${count(data.stats.output_tokens)} out`} icon={<TollRounded />} tone="neutral" />
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
               <StatTile label="Failed or timed out" value={data.stats.failed} caption="the feature fell back to rules" icon={<ErrorOutlineRounded />}
@@ -93,7 +93,7 @@ function RunList({ runs, selected, onSelect }: { runs: Run[]; selected: string |
                 <Typography variant="subtitle2" component="span" sx={{ fontWeight: 700 }}>{KIND_LABEL[r.kind] ?? r.kind}</Typography>
                 {r.status !== "done" ? <StatusChip tone={RUN_TONE[r.status] ?? "neutral"} label={r.status.replace("_", " ")} /> : null}
               </Stack>
-              <Typography variant="caption" color="text.secondary">{ago(r.created_at)} · {r.steps} step{r.steps === 1 ? "" : "s"}</Typography>
+              <MetaRow variant="caption" items={[ago(r.created_at), `${r.steps} step${r.steps === 1 ? "" : "s"}`]} />
             </Box>
             <Box sx={{ textAlign: "right" }}>
               <Typography variant="body2" className="tabular" sx={{ fontWeight: 600 }}>{seconds(r.latency_ms)}</Typography>
@@ -165,10 +165,15 @@ function RunTrace({ run }: { run: Run }) {
   return (
     <Box component="section" aria-label={`${KIND_LABEL[run.kind] ?? run.kind} run`} sx={{ border: 1, borderColor: brand.line, borderRadius: "14px", p: { xs: 2, sm: 2.5 }, minWidth: 0 }}>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { sm: "baseline" }, mb: 0.5 }}>
-        <Typography variant="h4" component="h3">{KIND_LABEL[run.kind] ?? run.kind} · {ago(run.created_at)}</Typography>
-        <Typography variant="body2" color="text.secondary" className="tabular">
-          {seconds(run.latency_ms)} · {run.turns.length} model turn{run.turns.length === 1 ? "" : "s"} · {tools} tool call{tools === 1 ? "" : "s"}
+        <Typography variant="h4" component="h3">
+          {KIND_LABEL[run.kind] ?? run.kind}
+          <Box component="span" sx={{ ml: 1.25, fontSize: 14, fontWeight: 500, color: brand.muted }}>{ago(run.created_at)}</Box>
         </Typography>
+        <MetaRow sx={{ fontVariantNumeric: "tabular-nums" }} items={[
+          { icon: SpeedRounded, label: seconds(run.latency_ms) },
+          { icon: AutoAwesomeRounded, label: `${run.turns.length} model turn${run.turns.length === 1 ? "" : "s"}` },
+          { icon: BuildRounded, label: `${tools} tool call${tools === 1 ? "" : "s"}` },
+        ]} />
       </Stack>
       <Typography variant="caption" color="text.secondary" sx={{ fontFamily: "ui-monospace, monospace" }}>{run.prompt_version}</Typography>
       {run.error ? <Alert severity="warning" sx={{ mt: 1.5 }}>{run.error}</Alert> : null}
@@ -195,7 +200,7 @@ function RunTrace({ run }: { run: Run }) {
                 "&:focus-visible": { outline: `2px solid ${brand.leaf}`, outlineOffset: 1 },
               }}>
               <Typography variant="body2" noWrap sx={{ gridArea: "label", fontFamily: r.tone === "turn" ? undefined : "ui-monospace, monospace", fontSize: r.tone === "turn" ? 14 : 13, color: r.tone === "turn" ? brand.muted : brand.forest }}>
-                {r.label}{r.detail ? <Box component="span" sx={{ color: brand.muted }}> · {r.detail}</Box> : null}
+                {r.label}{r.detail ? <Box component="span" sx={{ color: brand.muted, ml: 1 }}>{r.detail}</Box> : null}
               </Typography>
               <Box sx={{ gridArea: "bar", position: "relative", height: 16, bgcolor: r.key === active ? "#fff" : brand.cream, borderRadius: "5px" }}>
                 {timed && r.offset !== null ? (
@@ -226,21 +231,24 @@ function RunTrace({ run }: { run: Run }) {
 
 function Detail({ row }: { row: Row }) {
   const st = row.step;
-  const title = `${row.label}${row.detail ? ` · ${row.detail}` : ""}`;
+  const title = `${row.label}${row.detail ? ` (${row.detail})` : ""}`;
   return (
     <Box sx={{ mt: 2, display: "grid", gap: 1.5, gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "1fr 1fr" } }}>
       {row.turn ? (
         <Box sx={{ gridColumn: "1 / -1" }}>
           <Typography variant="caption" sx={{ fontWeight: 700, color: brand.muted }}>{row.label}</Typography>
-          <Typography variant="body2" className="tabular">
-            {duration(row.turn.latency_ms)} · {count(row.turn.input_tokens ?? 0)} tokens in · {count(row.turn.output_tokens ?? 0)} out · {row.turn.result}
-            {st ? ` · ended with ${st.tool ?? st.kind}` : ""}
-          </Typography>
+          <MetaRow color="text.primary" sx={{ fontVariantNumeric: "tabular-nums" }} items={[
+            duration(row.turn.latency_ms),
+            `${count(row.turn.input_tokens ?? 0)} tokens in`,
+            `${count(row.turn.output_tokens ?? 0)} out`,
+            row.turn.result,
+            st ? `Ended with ${st.tool ?? st.kind}` : null,
+          ]} />
         </Box>
       ) : null}
       {st && Object.keys(st.args).length ? (
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="caption" sx={{ fontWeight: 700, color: brand.muted }}>Arguments · {row.turn ? st.tool : title}</Typography>
+          <Typography variant="caption" sx={{ fontWeight: 700, color: brand.muted }}>Arguments for {row.turn ? st.tool : title}</Typography>
           <Box component="pre" sx={{ ...pre, bgcolor: brand.forest, color: brand.mint }}>{JSON.stringify(st.args, null, 2)}</Box>
         </Box>
       ) : null}

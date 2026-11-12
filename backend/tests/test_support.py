@@ -48,8 +48,8 @@ def test_a_refund_question_is_answered_from_what_paypal_reports(client, app, fix
     support = _ask(client, owner, co["order_id"], "I cancelled, where is my money?")
 
     assert support["ai_draft_source"] == "agent" and support["ai_draft"].startswith("Your refund of $5.00 is on its way")
-    labels = [(c["label"], c["value"].split(" · ")[:2]) for c in support["ai_checks"]]
-    assert labels == [("Payment", ["Refunded", "$5.00"]), ("Refund", ["On its way", "$5.00"])]  # what the shop's PayPal account shows
+    labels = [(c["label"], c["status"], c["value"].split(" on ")[0]) for c in support["ai_checks"]]
+    assert labels == [("Payment", "Refunded", "Refunded: $5.00"), ("Refund", "On its way", "On its way: $5.00")]  # what the shop's PayPal account shows
     seen = json.loads(next(m["content"] for m in fixture_llm.calls[1]["messages"] if m["role"] == "tool"))
     assert seen["refunds"][0]["status"] == "PENDING" and seen["capture"]["amount"] == "$5.00"
     with transaction() as db:

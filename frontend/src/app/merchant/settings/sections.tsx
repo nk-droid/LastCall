@@ -39,7 +39,7 @@ import { useConfig } from "@/components/config";
 import { TimelineToggle, WeekHoursTimeline, type TimelineView } from "@/components/pickup-timeline";
 import { CLOSED_BY_MERCHANT, slotStatus, splitLabel } from "@/components/slot-status";
 import { InvoiceStatus } from "@/components/commerce";
-import { InfoTip, StatusChip, brand, surface, tones } from "@/components/ui";
+import { InfoTip, MetaRow, StatusChip, brand, surface, tones } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { hhmmLabel, money, plural } from "@/lib/format";
 import type { Address, ShopPolicies, ShopSettings, Slot, Week, Weekday } from "@/lib/types";
@@ -245,7 +245,7 @@ function Panel({ title, subtitle, action, changes, editable, note, saveLabel, sa
     setError(null);
   }
 
-  const summary = changes.slice(0, 2).map((c) => (c.detail ? `${c.label} ${c.detail}` : c.label)).join(" · ") + (n > 2 ? ` · +${n - 2} more` : "");
+  const summary = n ? [...changes.slice(0, 2).map((c) => (c.detail ? `${c.label} ${c.detail}` : c.label)), n > 2 ? `+${n - 2} more` : null] : [];
   return (
     <Box component="section" aria-labelledby={headingId} sx={{ ...surface.raised, borderRadius: "16px" }}>
       <Stack direction="row" spacing={2} useFlexGap sx={{ px: { xs: 2.5, sm: 3.5 }, pt: { xs: 2.5, sm: 2.75 }, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -266,10 +266,7 @@ function Panel({ title, subtitle, action, changes, editable, note, saveLabel, sa
         }}>
           <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, bgcolor: n ? brand.warningText : brand.leaf }} />
           <Box sx={{ mr: "auto", minWidth: 0, flex: "1 1 240px" }}>
-            <Typography variant="body2" sx={{ fontWeight: 650 }}>
-              {n ? plural(n, "unsaved change") : "No unsaved changes"}
-              {n ? <Box component="span" sx={{ fontWeight: 400, color: "text.secondary" }}> · {summary}</Box> : null}
-            </Typography>
+            <MetaRow sx={{ color: "text.secondary" }} items={[{ label: n ? plural(n, "unsaved change") : "No unsaved changes", strong: true }, ...summary]} />
             {n && note ? <Typography variant="caption" color="text.secondary">{note}</Typography> : null}
           </Box>
           <Button variant="outlined" color="inherit" disabled={!n || busy} onClick={discard}>Discard</Button>
@@ -687,7 +684,7 @@ export function RulesSection({ settings, draft, setDraft, onSaved }: SectionProp
                   sx={{ px: 1, borderRadius: 999, fontSize: 12, fontWeight: 600, border: 1, lineHeight: "20px",
                         ...(closeoutOn ? { bgcolor: tones.success.bg, color: tones.success.fg, borderColor: tones.success.border }
                           : { bgcolor: tones.neutral.bg, color: brand.muted, borderColor: tones.neutral.border }) }}>
-                  {closeoutOn ? "On" : "Off"} · Assistant
+                  {closeoutOn ? "On" : "Off"} in Assistant
                 </Link>
               }>
               <NumberInput label="Close-out plan, minutes before pickup ends" value={v.closeout_lead_minutes} width={230} unit="min before end"
@@ -798,7 +795,7 @@ export function PayoutsSection({ settings, draft, setDraft, onSaved, onSettings 
       note="Shoppers re-accept your policies at their next checkout." saveLabel="Save tax and fees" saved="Taxes and fees saved"
       save={save} onSaved={onSaved} onDiscard={() => setDraft(undefined)}
       action={<StatusChip tone={connected ? "success" : "warning"} icon={connected ? VerifiedRounded : WarningAmberRounded}
-        label={connected ? `PayPal · ${p.display}` : "PayPal not connected"} />}>
+        label={connected ? `PayPal (${p.display})` : "PayPal not connected"} />}>
       {(f) => (
         <>
           <Group title="PayPal">
@@ -807,7 +804,7 @@ export function PayoutsSection({ settings, draft, setDraft, onSaved, onSettings 
                 : signIn && !manual ? "Sign in with PayPal and choose the account customers pay. We check it with PayPal; no money moves."
                 : "Your 13-character merchant ID, from Account settings → Business information. We check it with PayPal; no money moves."}>
               {connected && p.via === "paypal" && p.email ? (
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Connected by signing in with PayPal · {p.email}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Connected by signing in with PayPal as {p.email}</Typography>
               ) : null}
               {owner && signIn && !manual ? (
                 <Stack spacing={1} sx={{ alignItems: "flex-start" }}>
@@ -835,9 +832,8 @@ export function PayoutsSection({ settings, draft, setDraft, onSaved, onSettings 
           </Group>
           <Group title="LastCall fee">
             <Row label={settings.fees.terms.label} help="No listing or monthly fees, and shoppers pay nothing extra. Refunded orders aren't charged.">
-              <Typography sx={{ fontWeight: 650 }} className="tabular">
-                {money(settings.fees.week.fee_minor)} this week{settings.fees.week.orders ? ` · ${plural(settings.fees.week.orders, "order")}` : ""}
-              </Typography>
+              <MetaRow variant="body1" sx={{ fontVariantNumeric: "tabular-nums" }}
+                items={[{ label: `${money(settings.fees.week.fee_minor)} this week`, strong: true }, settings.fees.week.orders ? plural(settings.fees.week.orders, "order") : null]} />
             </Row>
             <Row label="Invoices" help={`Each Monday, PayPal sends an invoice for the week's fees to ${settings.fees.recipient || "the shop owner"}.`} stacked={settings.fees.invoices.length > 0}>
               {settings.fees.invoices.length ? (
@@ -845,9 +841,8 @@ export function PayoutsSection({ settings, draft, setDraft, onSaved, onSettings 
                   {settings.fees.invoices.map((i) => (
                     <Stack component="li" key={i.id} direction="row" spacing={1.5} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
                       <Typography variant="body2" className="tabular" sx={{ fontWeight: 650, minWidth: 64 }}>{money(i.amount_minor, i.currency)}</Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ flex: 1, minWidth: 140 }}>
-                        {i.period_label} · {plural(i.orders, "order")}{i.credit_minor ? ` · ${money(i.credit_minor, i.currency)} credit` : ""}
-                      </Typography>
+                      <MetaRow sx={{ flex: 1, minWidth: 140 }}
+                        items={[i.period_label, plural(i.orders, "order"), i.credit_minor ? `${money(i.credit_minor, i.currency)} credit` : null]} />
                       <InvoiceStatus invoice={i} />
                       {i.payer_url && !["PAID", "MARKED_AS_PAID", "CANCELLED"].includes(i.status) && owner ? (
                         <Button size="small" variant="outlined" color="inherit" href={i.payer_url} target="_blank" rel="noopener noreferrer">Pay in PayPal</Button>

@@ -8,15 +8,17 @@ import {
   GppGoodRounded,
   Inventory2Rounded,
   LocalCafeRounded,
+  LocationOnRounded,
   LockClockRounded,
   PaymentsRounded,
   ScheduleRounded,
+  StorefrontRounded,
 } from "@mui/icons-material";
 import { Box, Card, CardContent, Grid, Link, Skeleton, Stack, Typography } from "@mui/material";
 import { useId } from "react";
 
 import { PageShell } from "@/components/site";
-import { ErrorState, IconBadge, InfoList, LoadingBlock, PageHeader, StatTile, brand } from "@/components/ui";
+import { ErrorState, IconBadge, InfoList, LoadingBlock, MetaRow, PageHeader, StatTile } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import type { MerchantCard, MerchantPublic } from "@/lib/types";
 import { useResource } from "@/lib/use-api";
@@ -87,7 +89,7 @@ function ShopPolicyCard({ shop, detail }: { shop: MerchantCard; detail: Merchant
     shop.pickup.state === "open" && shop.pickup.today_window
       ? `Today ${shop.pickup.today_window.label}`
       : next
-        ? `Closed today · next ${next}`
+        ? `Closed today, opens ${next.replace(/^(Today|Tomorrow)\b/, (w) => w.toLowerCase())}`
         : "No pickup scheduled";
   return (
     <Card component="article" aria-labelledby={headingId} sx={{ height: "100%" }}>
@@ -100,9 +102,7 @@ function ShopPolicyCard({ shop, detail }: { shop: MerchantCard; detail: Merchant
             <Typography id={headingId} variant="h4" component="h3">
               {shop.name}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {shop.category} · {shop.neighborhood}
-            </Typography>
+            <MetaRow items={[shop.category, shop.neighborhood ? { label: shop.neighborhood, icon: LocationOnRounded } : null]} />
           </Box>
         </Stack>
         {detail ? (
@@ -125,10 +125,7 @@ function ShopPolicyCard({ shop, detail }: { shop: MerchantCard; detail: Merchant
           </Box>
         )}
         <Stack direction="row" spacing={1} useFlexGap sx={{ mt: "auto", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-          <Typography variant="body2" color="text.secondary" sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-            <PaymentsRounded aria-hidden sx={{ fontSize: 17, color: brand.leaf }} />
-            PayPal · pickup only
-          </Typography>
+          <MetaRow items={[{ label: "PayPal", icon: PaymentsRounded }, { label: "Pickup only", icon: StorefrontRounded }]} />
           <Link href={`/shops/${shop.slug}/policies`} variant="body2" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
             {shop.name} policies
             <ArrowForwardRounded aria-hidden sx={{ fontSize: 16 }} />

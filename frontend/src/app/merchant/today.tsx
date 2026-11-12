@@ -12,8 +12,11 @@ import {
   ChevronRightRounded,
   CircleRounded,
   PauseCircleRounded,
+  PaymentsRounded,
   PlayCircleRounded,
   RemoveRounded,
+  ScheduleRounded,
+  ShoppingBagRounded,
 } from "@mui/icons-material";
 import { Alert, Box, Button, Card, Collapse, IconButton, Link, Stack, TextField, Typography } from "@mui/material";
 import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
@@ -22,7 +25,7 @@ import { useAnnounce } from "@/components/announcer";
 import { CloseoutCard, duration } from "@/components/closeout-plan";
 import { Dialog } from "@/components/dialog";
 import { hasRole, useStaff } from "@/components/merchant-shell";
-import { ErrorState, LoadingBlock, PageHeader, SectionCard, StatusChip, brand, tones, type Tone } from "@/components/ui";
+import { ErrorState, LoadingBlock, MetaRow, PageHeader, SectionCard, StatusChip, brand, tones, type Tone } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { ago, money, plural, timeLabel } from "@/lib/format";
 import type { CloseoutPlan, CloseoutState, InventoryRow, OpenOrder, Overview, PickupLookup } from "@/lib/types";
@@ -412,7 +415,7 @@ function HandoffDialog({ target, onClose, onDone }: { target: HandoffTarget | nu
                 sx={{ justifyContent: "space-between", textAlign: "left", py: 1.5, px: 2, bgcolor: "#fff", gap: 2 }}>
                 <Box>
                   <Typography sx={{ fontWeight: 700 }}>{m.customer_name ?? "Customer"}</Typography>
-                  <Typography variant="body2" color="text.secondary">#{m.number} · {m.pickup_label} · {plural(m.units, "item")}</Typography>
+                  <MetaRow items={[`#${m.number}`, { label: m.pickup_label, icon: ScheduleRounded }, { label: plural(m.units, "item"), icon: ShoppingBagRounded }]} />
                 </Box>
                 <OrderStatus order={m} />
               </Button>
@@ -425,7 +428,7 @@ function HandoffDialog({ target, onClose, onDone }: { target: HandoffTarget | nu
             <Stack direction="row" spacing={2} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
               <Box>
                 <Typography variant="h3" component="p">{order.customer_name ?? "Customer"}</Typography>
-                <Typography variant="body2" color="text.secondary">{order.pickup_label} · paid via PayPal</Typography>
+                <MetaRow items={[{ label: order.pickup_label, icon: ScheduleRounded }, { label: "Paid via PayPal", icon: PaymentsRounded }]} />
               </Box>
               <OrderStatus order={order} />
             </Stack>
@@ -552,9 +555,8 @@ function SlotGroup({ group: g, now, open, timeZone, onToggle, onHandOff, onChang
           }}>
           <ChevronRightRounded aria-hidden sx={{ transition: "transform 150ms", transform: open ? "rotate(90deg)" : "none" }} />
           <Box component="span" sx={{ fontWeight: 700 }}>{time}</Box>
-          <Box component="span" sx={{ color: end <= now ? tones.danger.fg : "text.secondary", fontWeight: end <= now ? 600 : 400 }}>
-            {when} · {plural(g.orders.length, "order")}
-          </Box>
+          <MetaRow inline variant="body1" sx={{ color: end <= now ? tones.danger.fg : "text.secondary", fontWeight: end <= now ? 600 : 400 }}
+            items={[when, plural(g.orders.length, "order")]} />
           {ready ? <StatusChip tone="success" label={`${ready} ready`} /> : null}
           {toPack ? <StatusChip tone="info" label={`${toPack} to pack`} /> : null}
           {paying ? <StatusChip tone="warning" label={`${paying} paying`} /> : null}
@@ -588,7 +590,7 @@ function Capacity({ booked, capacity }: { booked: number; capacity: number }) {
 function OrderStatus({ order, now }: { order: OpenOrder | Match; now?: number }) {
   if (order.payment_status !== "CAPTURED") {
     const hold = "hold_expires_at" in order && order.hold_expires_at && now ? Math.max(0, Math.ceil((Date.parse(order.hold_expires_at) - now) / 60_000)) : null;
-    return <StatusChip tone="warning" label={hold !== null ? `Paying · ${hold} min left` : "Paying"} />;
+    return <StatusChip tone="warning" label={hold !== null ? `Paying, ${hold} min left` : "Paying"} />;
   }
   if (order.fulfillment_status === "READY") return <StatusChip tone="success" label="Ready" />;
   return <StatusChip tone="info" label={order.fulfillment_status === "PACKING" ? "Packing" : "To pack"} />;
@@ -664,7 +666,7 @@ function NeedsYou({ o, onResolved }: { o: Overview; onResolved: () => void }) {
     const oldest = o.stale_inventory.reduce((a, b) => (Date.parse(a.updated_at) < Date.parse(b.updated_at) ? a : b));
     needs.push({
       key: "stale", tone: "warning", label: "Stock", title: `Recount ${plural(o.stale_inventory.length, "item")}`,
-      detail: `${names(o.stale_inventory.map((s) => s.name))} · last counted ${ago(oldest.updated_at)}`,
+      detail: `${names(o.stale_inventory.map((s) => s.name))}. Last counted ${ago(oldest.updated_at)}.`,
       action: <Button href="/merchant/inventory" size="small" variant="outlined" color="inherit">Recount</Button>,
     });
   }
@@ -801,9 +803,7 @@ function StockWatch({ rows, onChanged }: { rows: StockRow[]; onChanged: () => vo
             <Box component="li" key={r.product_id} sx={{ display: "flex", alignItems: "center", gap: 1.5, py: 1, borderTop: 1, borderColor: brand.line }}>
               <Box sx={{ flex: 1, minWidth: 0 }}>
                 <Typography variant="body2" sx={{ fontWeight: 650 }}>{r.name}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {r.available ? `${r.available} left` : "Sold out"}{anySold ? ` · ${pct}% sold` : ""}
-                </Typography>
+                <MetaRow variant="caption" items={[r.available ? `${r.available} left` : "Sold out", anySold ? `${pct}% sold` : null]} />
               </Box>
               <Stack direction="row" sx={{ alignItems: "center", border: 1, borderColor: brand.lineStrong, borderRadius: "10px", flexShrink: 0 }}>
                 <IconButton aria-label={`List one fewer ${r.name}`} disabled={r.surplus - held <= 0} onClick={() => adjust(r, -1)} sx={{ borderRadius: "9px 0 0 9px", width: 44, height: 40 }}>

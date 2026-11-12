@@ -14,6 +14,7 @@ import {
   ScheduleRounded,
   ShoppingBagRounded,
   ShoppingBasketRounded,
+  StorefrontRounded,
   SwapHorizRounded,
   SyncRounded,
   TuneRounded,
@@ -29,7 +30,7 @@ import { useAnnounce } from "@/components/announcer";
 import { AllergenTags, PriceBreakdown } from "@/components/commerce";
 import { ProductImage } from "@/components/product-image";
 import { FlowSteps, PageShell } from "@/components/site";
-import { ErrorState, IconBadge, InfoList, LoadingBlock, PageHeader, SectionCard, StatusChip, brand, surface, shadows, tones } from "@/components/ui";
+import { ErrorState, IconBadge, InfoList, LoadingBlock, MetaRow, PageHeader, SectionCard, StatusChip, brand, surface, shadows, tones } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { ALLERGEN_LABEL, ago, money, timeLabel } from "@/lib/format";
 import type { Offer, Quote, Slot } from "@/lib/types";
@@ -248,9 +249,10 @@ export function Review({ quoteId }: { quoteId: string }) {
             ) : (
               <StatusChip tone="warning" icon={SyncRounded} label="Checking changes" />
             )}
-            <Typography variant="body2" color="text.secondary" sx={{ alignSelf: "center" }}>
-              {shop.name} · stock checked {ago(q.validity?.checked_at ?? q.checked_at)}
-            </Typography>
+            <MetaRow
+              sx={{ alignSelf: "center" }}
+              items={[{ label: shop.name, icon: StorefrontRounded }, `Stock checked ${ago(q.validity?.checked_at ?? q.checked_at)}`]}
+            />
           </>
         }
         actions={
@@ -409,7 +411,7 @@ export function Review({ quoteId }: { quoteId: string }) {
                 >
                   {fittingSlots.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.label} · {s.remaining} left
+                      {s.label} ({s.remaining} left)
                     </option>
                   ))}
                 </TextField>
@@ -488,10 +490,12 @@ function ChangeProposal({ offer, shopSlug, zone, headingRef, busy, onAccept, onA
         </Stack>
 
         <Typography sx={{ mt: 2.5 }}>{offer.explanation}</Typography>
-        <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.5, display: "flex", alignItems: "center", gap: 0.5 }}>
-          {offer.explanation_source === "ai" ? <AutoAwesomeRounded aria-hidden sx={{ fontSize: 14 }} /> : null}
-          {offer.explanation_source === "ai" ? "AI-written explanation · replacement chosen by code" : "Replacement chosen by code"}
-        </Typography>
+        <MetaRow
+          variant="caption"
+          component="p"
+          sx={{ mt: 0.5 }}
+          items={[offer.explanation_source === "ai" ? { label: "AI-written explanation", icon: AutoAwesomeRounded } : null, "Replacement chosen by code"]}
+        />
 
         {c.after ? (
           <Grid container spacing={{ xs: 2, sm: 2.5 }} sx={{ mt: 3, alignItems: "stretch" }}>
@@ -566,7 +570,7 @@ function ChangeProposal({ offer, shopSlug, zone, headingRef, busy, onAccept, onA
           columns={3}
           sx={{ mt: 3 }}
           items={[
-            { label: "Pickup", icon: ScheduleRounded, value: c.pickup.unchanged ? `Unchanged · ${c.pickup.label}` : c.pickup.label },
+            { label: "Pickup", icon: ScheduleRounded, value: c.pickup.unchanged ? `${c.pickup.label} (unchanged)` : c.pickup.label },
             {
               label: "Budget",
               icon: AccountBalanceWalletRounded,
@@ -585,7 +589,7 @@ function ChangeProposal({ offer, shopSlug, zone, headingRef, busy, onAccept, onA
             {
               label: "Stock checked",
               icon: Inventory2Rounded,
-              value: `${timeLabel(c.inventory_checked_at, zone)}${c.inventory_updated_at ? ` · updated ${timeLabel(c.inventory_updated_at, zone)}` : ""}`,
+              value: `${timeLabel(c.inventory_checked_at, zone)}${c.inventory_updated_at ? `, updated ${timeLabel(c.inventory_updated_at, zone)}` : ""}`,
             },
           ]}
         />
@@ -623,12 +627,20 @@ function ChangeProposal({ offer, shopSlug, zone, headingRef, busy, onAccept, onA
                       <Typography component="span" variant="body2" sx={{ display: "block", fontWeight: 650 }}>
                         {alt.kind === "remove" ? "Just remove it" : `${alt.add_qty} × ${alt.add_name}`}
                       </Typography>
-                      <Typography component="span" variant="body2" className="tabular" sx={{ display: "block", mt: 0.25, color: "text.secondary" }}>
-                        {money(alt.total_minor)} total ·{" "}
-                        <Box component="span" sx={{ fontWeight: 650, color: alt.delta_minor <= 0 ? brand.leafDark : tones.warning.fg }}>
-                          {signedMoney(alt.delta_minor)}
-                        </Box>
-                      </Typography>
+                      <MetaRow
+                        component="span"
+                        sx={{ mt: 0.25, fontVariantNumeric: "tabular-nums" }}
+                        items={[
+                          `${money(alt.total_minor)} total`,
+                          {
+                            label: (
+                              <Box component="span" sx={{ fontWeight: 650, color: alt.delta_minor <= 0 ? brand.leafDark : tones.warning.fg }}>
+                                {signedMoney(alt.delta_minor)}
+                              </Box>
+                            ),
+                          },
+                        ]}
+                      />
                     </CardActionArea>
                   </Card>
                 </li>

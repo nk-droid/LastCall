@@ -48,9 +48,9 @@ export function AskProvider({ shop, children }: { shop?: Scope; children: ReactN
         </Button>
       ) : null}
       {open ? (
-        <Dialog open side onClose={() => setOpen(false)} title={scope ? `Ask LastCall · ${scope.name}` : "Ask LastCall"}
+        <Dialog open side onClose={() => setOpen(false)} title={scope ? `Ask LastCall about ${scope.name}` : "Ask LastCall"}
           description={scope ? (
-            <>Looking only at {scope.name} · <Link component="button" type="button" onClick={() => setEveryShop(true)} sx={{ verticalAlign: "baseline" }}>ask about every shop</Link></>
+            <>Looking only at {scope.name}. <Link component="button" type="button" onClick={() => setEveryShop(true)} sx={{ verticalAlign: "baseline" }}>Ask about every shop</Link></>
           ) : "Say who it's for, your budget, allergies and pickup time. It checks every shop open today."}>
           <ConciergePanel key={scope?.slug ?? "all"} shop={scope} autoFocus />
         </Dialog>
