@@ -83,6 +83,18 @@ def receive(headers: dict[str, str], raw_body: str) -> dict[str, Any]:
     return {"status": "accepted", "event_id": event_id}
 
 
+REFUND_EVENTS = ("PAYMENT.CAPTURE.REFUNDED", "PAYMENT.CAPTURE.REVERSED")
+
+
+def _up_capture_id(resource: dict[str, Any]) -> str | None:
+    """A refund resource names its capture only through its "up" link (…/v2/payments/captures/{id})."""
+    for link in resource.get("links") or []:
+        href = (link or {}).get("href") or ""
+        if link.get("rel") == "up" and "/captures/" in href:
+            return href.rstrip("/").rsplit("/", 1)[-1] or None
+    return None
+
+
 def process(webhook_event_id: str) -> dict[str, Any]:
     with transaction() as db:
         row = db.get(WebhookEvent, webhook_event_id)
@@ -96,15 +108,18 @@ def process(webhook_event_id: str) -> dict[str, Any]:
         attempt = None
         if event_type.startswith("PAYMENT.CAPTURE."):
             attempt = db.scalar(select(PaymentAttempt).where(PaymentAttempt.capture_id == resource.get("id")))
+            if attempt is None and event_type in REFUND_EVENTS and (capture_id := related.get("capture_id") or _up_capture_id(resource)):
+                attempt = db.scalar(select(PaymentAttempt).where(PaymentAttempt.capture_id == capture_id))
             if attempt is None and related.get("order_id"):
                 attempt = db.scalar(select(PaymentAttempt).where(PaymentAttempt.paypal_order_id == related["order_id"]))
         elif event_type.startswith("CHECKOUT.ORDER."):
             attempt = db.scalar(select(PaymentAttempt).where(PaymentAttempt.paypal_order_id == resource.get("id")))
         attempt_id = attempt.id if attempt else None
-        pending_refunds = []
-        if attempt is not None and event_type in ("PAYMENT.CAPTURE.REFUNDED", "PAYMENT.CAPTURE.REVERSED"):
+        pending_refunds, ours = [], False
+        if attempt is not None and event_type in REFUND_EVENTS:
             pending_refunds = [r.id for r in db.scalars(select(Refund).where(Refund.payment_attempt_id == attempt.id,
                                                                             Refund.state.in_(["REQUESTED", "PENDING", "OUTCOME_UNKNOWN"]))).all()]
+            ours = resource.get("id") is not None and db.scalar(select(Refund.id).where(Refund.paypal_refund_id == resource["id"])) is not None
     if event_type.startswith("INVOICING.INVOICE."):
         result = "fee_invoice:" + fees.on_webhook(resource.get("id"))
     elif attempt_id is None:
@@ -112,10 +127,10 @@ def process(webhook_event_id: str) -> dict[str, Any]:
     elif event_type in ("PAYMENT.CAPTURE.COMPLETED", "PAYMENT.CAPTURE.PENDING", "PAYMENT.CAPTURE.DENIED", "PAYMENT.CAPTURE.DECLINED",
                         "CHECKOUT.ORDER.COMPLETED", "CHECKOUT.ORDER.APPROVED"):
         result = "reconciled:" + checkout.reconcile_attempt(attempt_id, reason=f"webhook:{event_type}")
-    elif event_type in ("PAYMENT.CAPTURE.REFUNDED", "PAYMENT.CAPTURE.REVERSED"):
+    elif event_type in REFUND_EVENTS:
         outcomes = [refunds.reconcile_refund(rid) for rid in pending_refunds]
-        result = "refunds:" + (",".join(outcomes) if outcomes else "none_pending")
-        if not pending_refunds:
+        result = "refunds:" + (",".join(outcomes) if outcomes else "already_recorded" if ours else "none_pending")
+        if not pending_refunds and not ours:
             with transaction() as db:
                 attempt = db.get(PaymentAttempt, attempt_id)
                 order = db.get(Order, attempt.order_id)

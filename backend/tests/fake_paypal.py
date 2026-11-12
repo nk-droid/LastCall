@@ -37,6 +37,9 @@ def _now() -> str:
     return clock.iso(clock.now())  # type: ignore[return-value]
 
 
+API = "https://api-m.sandbox.paypal.com"
+
+
 def _public(node: Any) -> Any:
     """Drop the fake's private bookkeeping keys (prefixed with _)."""
     if isinstance(node, dict):
@@ -345,8 +348,12 @@ class FakePayPal:
                     refund["status"] = "COMPLETED"
 
     def _emit(self, event_type: str, resource_type: str, resource: dict[str, Any], order_id: str, capture_id: str | None = None) -> None:
-        related = {"order_id": order_id} | ({"capture_id": capture_id} if capture_id else {})
+        public = _public(copy.deepcopy(resource))
+        if resource_type == "refund":  # PayPal names the capture only in the refund's "up" link, with no related ids
+            body = public | {"links": [{"href": f"{API}/v2/payments/refunds/{resource['id']}", "rel": "self", "method": "GET"},
+                                       {"href": f"{API}/v2/payments/captures/{capture_id}", "rel": "up", "method": "GET"}]}
+        else:
+            body = public | {"supplementary_data": {"related_ids": {"order_id": order_id} | ({"capture_id": capture_id} if capture_id else {})}}
         self.outbox.append({"id": "WH-" + _pid("")[:12] + "-" + secrets.token_hex(4).upper(), "event_version": "1.0",
                             "create_time": _now(), "resource_type": resource_type, "event_type": event_type,
-                            "summary": f"{event_type} (test)",
-                            "resource": _public(copy.deepcopy(resource)) | {"supplementary_data": {"related_ids": related}}})
+                            "summary": f"{event_type} (test)", "resource": body})

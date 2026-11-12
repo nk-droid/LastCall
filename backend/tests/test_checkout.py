@@ -12,7 +12,7 @@ from sqlalchemy.exc import DBAPIError
 from app import clock
 from app.config import override_settings, settings
 from app.db import transaction
-from app.models import AuditEvent, Merchant, Order, PaymentAttempt, Reservation
+from app.models import AuditEvent, Merchant, MerchantAlert, Order, PaymentAttempt, Reservation
 from app.payments import faults, get_client, reset_clients
 from app.payments.sandbox import SANDBOX_API_BASE
 from app.services import checkout, holds, orders, webhooks
@@ -153,6 +153,27 @@ def test_at08_unsigned_webhook_is_rejected(client, paypal):
     body = json.dumps({"id": "WH-FORGED", "event_type": "PAYMENT.CAPTURE.COMPLETED", "resource": {"id": "X"}})
     r = client.post("/api/webhooks/paypal", content=body, headers={**paypal.signed(body, valid=False), "content-type": "application/json"})
     assert r.status_code == 400 and r.json()["error"]["code"] == "webhook_rejected"
+
+
+def test_at08_refund_webhooks_find_the_capture_through_its_link(client, app, paypal):
+    co, _ = buy(client, [("CR-01", 1)], slot_index=2)
+    ok(client.post(f"/api/orders/{co['order_id']}/cancel-request", json={"reason": "Plans changed"}))
+    ok(_staff(app, "manager").post(f"/api/merchant/orders/{co['order_id']}/refund", json={"reason": "Customer cancelled", "return_to_stock": True}))
+    paypal.deliver_webhooks()
+    drain_jobs()
+    refunded = next(e for e in webhooks.recent() if e["event_type"] == "PAYMENT.CAPTURE.REFUNDED")
+    assert refunded["processing_result"] == "refunds:already_recorded"  # LastCall's own refund: matched, not flagged
+
+    capture_id = paypal.captures(co["paypal_order_id"])[0]["id"]
+    outside = {"id": "WH-OUTSIDE-REFUND", "event_type": "PAYMENT.CAPTURE.REFUNDED", "resource_type": "refund",
+               "resource": {"id": "REF-FROM-DASHBOARD", "status": "COMPLETED", "amount": {"currency_code": "USD", "value": "1.00"},
+                            "links": [{"href": f"{SANDBOX_API_BASE}/v2/payments/captures/{capture_id}", "rel": "up", "method": "GET"}]}}
+    body = json.dumps(outside)
+    assert webhooks.receive(paypal.signed(body), body)["status"] == "accepted"
+    drain_jobs()
+    assert next(e for e in webhooks.recent() if e["resource_id"] == "REF-FROM-DASHBOARD")["processing_result"] == "refunds:none_pending"
+    with transaction() as db:
+        assert db.scalar(select(func.count()).select_from(MerchantAlert).where(MerchantAlert.kind == "external_refund")) == 1
 
 
 # --------------------------------------------------------------------------- AT-09 expiry during payment
