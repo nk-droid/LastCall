@@ -17,6 +17,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-Python%203.12-009688?logo=fastapi&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
 ![Render](https://img.shields.io/badge/Deployed%20on-Render-46E3B7?logo=render&logoColor=black)
+![Bryntum](https://img.shields.io/badge/Bryntum-Scheduler-0076F8)
 
 ![A Saffron Table bundle: every item with its photo and price, and how it fits a strict nut allergy](docs/screenshots/bundle.jpg)
 
@@ -100,6 +101,7 @@ flowchart LR
 * The browser only talks to the Next.js origin, which proxies `/api` to the API, so cookies are first-party and no secret reaches the client.
 * PostgreSQL is the system of record: money in integer minor units, an append-only audit log enforced by a trigger, and a durable job queue run by an in-process worker.
 * Every change to an order, a stock lot or a hold emits a `NOTIFY`, which reaches open pages over server-sent events.
+* **Sponsor tools:** everything is deployed on **Render** (web app, API and PostgreSQL from one [`render.yaml`](render.yaml) blueprint), and shop settings use the **Bryntum Scheduler** to show the week's opening hours, pickup windows and each slot's bookings as a timeline.
 
 Details: [docs/architecture.md](docs/architecture.md). The rules that protect shoppers and shops, and the tests that enforce them: [docs/safety-and-trust.md](docs/safety-and-trust.md).
 
