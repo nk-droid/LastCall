@@ -381,6 +381,24 @@ function TraceDrawer({ traceId, onClose }: { traceId: string; onClose: () => voi
 
 function WebhooksTab() {
   const events = useResource((signal) => api<{ events: Webhook[] }>("/api/ops/webhooks", { signal }), [], { pollMs: 15_000 });
+/** PayPal's verify-webhook-signature answers "SUCCESS"; only events that passed are stored. */
+function VerificationChip({ value }: { value: string }) {
+  const ok = ["success", "verified"].includes(value.toLowerCase());
+  return ok ? <StatusChip tone="success" label="Verified" /> : <StatusChip tone="danger" label={value.toLowerCase().replaceAll("_", " ")} />;
+}
+
+const RESULT_HEAD: Record<string, string> = { reconciled: "Payment", refunds: "Refund", fee_invoice: "Fee invoice" };
+const RESULT_WHOLE: Record<string, string> = { unmatched: "No matching order", ignored: "Not needed", already_processed: "Already handled" };
+
+/** "reconciled:captured" → "Payment captured"; "refunds:none_pending" → "Refund none pending". */
+function webhookResult(result: string | null): string {
+  if (!result) return "Queued";
+  if (RESULT_WHOLE[result]) return RESULT_WHOLE[result];
+  const [head, tail = ""] = result.split(":", 2);
+  const detail = tail.replaceAll("_", " ").replaceAll(",", ", ");
+  return RESULT_HEAD[head] ? `${RESULT_HEAD[head]} ${detail}`.trim() : result.replaceAll("_", " ").replace(":", ": ");
+}
+
   return (
     <SectionCard title="PayPal webhooks" subtitle="Verified, de-duplicated, then reconciled against PayPal." icon={<WebhookRounded />}>
       {!events.data ? <LoadingBlock label="Loading webhooks" lines={3} /> : (
@@ -388,8 +406,8 @@ function WebhooksTab() {
           {events.data.events.map((w) => (
             <TableRow key={w.id} hover>
               <Cell>{w.event_type}</Cell><Cell mono>{w.resource_id ?? "—"}</Cell>
-              <Cell><StatusChip tone={w.verification === "verified" ? "success" : "danger"} label={w.verification} /></Cell>
-              <Cell>{w.duplicate_count}</Cell><Cell>{w.processing_result ?? "queued"}</Cell><Cell>{ago(w.received_at)}</Cell>
+              <Cell><VerificationChip value={w.verification} /></Cell>
+              <Cell>{w.duplicate_count}</Cell><Cell>{webhookResult(w.processing_result)}</Cell><Cell>{ago(w.received_at)}</Cell>
             </TableRow>
           ))}
         </DataTable>
