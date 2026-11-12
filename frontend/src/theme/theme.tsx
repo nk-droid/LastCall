@@ -71,6 +71,17 @@ export const theme = createTheme({
       },
     },
     MuiButtonBase: { defaultProps: { LinkComponent: LinkBehavior } },
+    MuiTypography: {
+      // MUI 9 colours Typography only for palette keys ("textSecondary"); the pages use the dotted form, so map it here.
+      styleOverrides: {
+        root: {
+          variants: [
+            { props: { color: "text.secondary" }, style: { color: brand.muted } },
+            { props: { color: "text.primary" }, style: { color: brand.forest } },
+          ],
+        },
+      },
+    },
     MuiLink: {
       defaultProps: { component: LinkBehavior, underline: "always" },
       styleOverrides: { root: { fontWeight: 600, textUnderlineOffset: 3 } },
