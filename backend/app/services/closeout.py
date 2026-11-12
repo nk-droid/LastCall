@@ -29,7 +29,7 @@ from types import SimpleNamespace
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 
 from app import clock
@@ -54,6 +54,7 @@ MAX_ACTIONS = 6
 MAX_DELTA = 50
 ActionType = Literal["adjust_surplus", "lower_price", "pause_listing", "resume_listing", "close_slot", "reopen_slot", "set_slot_capacity"]
 PRODUCT_ACTIONS = {"adjust_surplus", "lower_price", "pause_listing", "resume_listing"}
+PRICE_TYPE_ALIASES = {"price_change", "change_price", "price_cut", "cut_price", "reduce_price", "discount", "markdown"}
 
 
 # --------------------------------------------------------------------------- tool contracts
@@ -71,6 +72,25 @@ class PlanAction(BaseModel):
     new_price_dollars: float | None = Field(default=None, gt=0, le=1000, description="lower_price: the new price in dollars")
     capacity: int | None = Field(default=None, ge=0, le=100, description="set_slot_capacity: the new capacity")
     reason: str = Field(default="", max_length=240)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _models_own_words(cls, data: Any) -> Any:
+        """Models often write a cut as {"type": "price_change", "new_price": "$4.20"}: read it as lower_price at $4.20.
+        The bounds in _check still decide whether the cut is allowed."""
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        if str(data.get("type") or "").strip().lower() in PRICE_TYPE_ALIASES:
+            data["type"] = "lower_price"
+        if data.get("new_price_dollars") in (None, ""):
+            data["new_price_dollars"] = next((data[k] for k in ("new_price", "price", "new_sale_price") if data.get(k) not in (None, "")), None)
+        if isinstance(data["new_price_dollars"], str):
+            try:
+                data["new_price_dollars"] = float(data["new_price_dollars"].replace("$", "").replace(",", "").strip())
+            except ValueError:
+                pass  # the field's own validation rejects it
+        return data
 
 
 class ProposePlanArgs(BaseModel):
@@ -356,7 +376,9 @@ def _check_product(action: PlanAction, p: dict[str, Any], item: dict[str, Any], 
             raise _Drop("Not on sale right now")
         if p["price_changed_today"]:
             raise _Drop("Price already changed today")
-        new = int(round((action.new_price_dollars or 0) * 100))
+        if action.new_price_dollars is None:
+            raise _Drop("No new price given")
+        new = int(round(action.new_price_dollars * 100))
         if new >= p["sale_minor"]:
             raise _Drop("The close-out plan only lowers prices")
         if new < (p["floor_minor"] or 0):

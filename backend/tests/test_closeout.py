@@ -129,6 +129,18 @@ def test_actions_that_break_a_bound_are_dropped_with_the_reason(client, manager,
     assert status["a10"] == ("dropped", "No such product")
 
 
+def test_a_price_cut_in_the_models_own_words_is_read_and_still_checked(manager, fixture_llm):
+    at(18, 5)
+    fixture_llm.queue(TASK, read_all(), plan_with({"type": "price_change", "sku": "BR-02", "new_price": "$1.75", "reason": "slow"},
+                                                  {"type": "price_change", "sku": "SC-04", "new_price": "$0.10", "reason": "too far"},
+                                                  {"type": "lower_price", "sku": "CR-01", "reason": "forgot the price"}))
+    plan = ok(manager.post("/api/merchant/closeout/run"))
+    acts = by_id(plan)
+    assert (acts["a1"]["type"], acts["a1"]["status"], acts["a1"]["new_sale_minor"]) == ("lower_price", "proposed", 175)
+    assert acts["a2"]["status"] == "dropped" and "lowest allowed price" in acts["a2"]["note"]
+    assert (acts["a3"]["status"], acts["a3"]["note"]) == ("dropped", "No new price given")
+
+
 def test_only_a_manager_can_apply_and_staff_see_it_read_only(manager, staff):
     at(18, 5)
     closeout.run_due()
