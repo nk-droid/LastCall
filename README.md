@@ -105,21 +105,54 @@ flowchart LR
 
 Details: [docs/architecture.md](docs/architecture.md). The rules that protect shoppers and shops, and the tests that enforce them: [docs/safety-and-trust.md](docs/safety-and-trust.md).
 
-## Run it locally
+## Run and check it locally
 
-You need Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 20.9+, a PayPal Sandbox REST app, and optionally an [Ollama API key](https://ollama.com/settings/keys) (without one, the agents run on their plain rules).
+### 1. Set up
+
+You need Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 20.9+, and a PayPal Sandbox REST app (client ID and secret from the [PayPal Developer Dashboard](https://developer.paypal.com/dashboard/applications/sandbox)). An [Ollama API key](https://ollama.com/settings/keys) is optional: without one, every agent runs on its plain rules.
 
 ```bash
-cd backend && cp .env.example .env        # add PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET (and OLLAMA_API_KEY)
+# API on http://localhost:8787 (an embedded PostgreSQL starts when DATABASE_URL is unset)
+cd backend
+cp .env.example .env
+# In .env set: PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, OPS_FAULTS_ENABLED=true (for the failure drill),
+# and optionally OLLAMA_API_KEY. If this folder's path has spaces, also set DATA_DIR=/tmp/lastcall-data.
 uv sync
-SHOWCASE_PASSWORD=choose-a-password uv run python -m app.cli seed-showcase
-uv run python -m app.cli create-admin --email you@example.com
-uv run uvicorn app.main:app --port 8787     # embedded PostgreSQL if DATABASE_URL is unset
+SHOWCASE_PASSWORD=choose-a-password uv run python -m app.cli seed-showcase   # four shops and their staff
+uv run python -m app.cli create-admin --email you@example.com                # Platform ops (asks for a password)
+uv run uvicorn app.main:app --port 8787
 
-cd ../frontend && npm install && npm run dev   # http://localhost:3787
+# Web app on http://localhost:3787 (proxies /api to the API), in a second terminal
+cd frontend
+npm install
+npm run dev
 ```
 
-Deploying to Render, environment variables and PayPal app setup: [docs/deployment.md](docs/deployment.md).
+Sign-ins: shoppers need no account. Shop staff are `<shop>.<role>@example.com` with your `SHOWCASE_PASSWORD`, for example `nightowl.manager@example.com` (shops: `nightowl`, `juniperrye`, `copperkettle`, `goldenbun`; roles: `owner`, `manager`, `staff`). Platform ops uses the admin you created. Pickup times are Pacific; **Night Owl Doughnuts takes pickups around the clock**, so start there.
+
+### 2. Check every feature
+
+Pay in PayPal's window with **Debit or Credit Card** and a card from [PayPal's card generator](https://developer.paypal.com/tools/sandbox/card-testing/) (any future expiry, any CVV). If the card form shows another country, switch it to United States. Use two browser windows (shopper and staff) to see live updates.
+
+| Feature | How to check it |
+|---|---|
+| Ask LastCall, the shopping agent | On the home page ask *breakfast for 2 under $10*. It checks every open shop and returns itemised bundles with "How it fits". |
+| Strict allergies fail closed | Open Night Owl, press **Ask LastCall** and ask *snacks for 4, my son has a severe milk allergy*. Nothing is offered, and the answer says why. |
+| Live stock and swap approval | Open a bundle's review page. As `nightowl.manager`, mark one of its items **Sold out** in Inventory: the review page proposes a swap and blocks payment until it's accepted. |
+| PayPal checkout | **Hold items & continue**, then **Pay with PayPal**. The order page shows **Paid and verified with PayPal** only after the server captures. |
+| Lost PayPal reply, recovered | Platform ops (account menu) > **Failure injection** > *Capture succeeds at PayPal but the response is lost* > **Arm once**, then pay for an order. It confirms once; **Payments > Trace** shows the unknown outcome and the reconciliation. |
+| Pickup handoff | Orders > **Mark ready**, then enter the shopper's 4-digit code and **Verify code & hand off**. The pass updates live. |
+| Support agent | From the pickup pass, send *was I charged twice?*. Orders > Messages shows **AI draft, checked with PayPal** (a template draft without a model key). |
+| Refunds | Orders > **Refund…**. It completes only when PayPal confirms. |
+| Close-out agent | Today > **Plan close-out**, then **Apply all**. Price cuts stay above 30% of the regular price, and nothing changes until a manager applies it. |
+| AI teammates | **Assistant** shows what each of the four agents did. |
+| Watch alerts | Ask for something that isn't available and tap **Watch for this**. Without SMTP, emails appear in Platform ops > **Emails**. |
+| LastCall's fee | Platform ops > Revenue > **Bill shops now** sends each shop a PayPal Sandbox invoice for 10% of its paid orders' items. |
+| Agent traces | Platform ops > **AI calls** shows every model call and each agent run as a timeline. |
+| New shop onboarding | **List your shop**, then follow the setup checklist. For payouts, use the merchant ID of one of your Sandbox business accounts (Developer Dashboard > Sandbox accounts). Approve it in Platform ops > **Shops**. |
+| Webhooks (optional) | Expose port 8787 with a tunnel (e.g. `cloudflared tunnel --url http://localhost:8787`), add `<tunnel>/api/webhooks/paypal` as a webhook in your PayPal app and set `PAYPAL_WEBHOOK_ID`. Platform ops > **Webhooks** shows each event as Verified. Payments don't depend on webhooks. |
+
+Seeded shops are paid into your PayPal app's own Sandbox account; set `SHOWCASE_PAYEE_<SHOP>` (e.g. `SHOWCASE_PAYEE_NIGHT_OWL`) to a Sandbox business merchant ID before seeding to pay that shop directly. Deploying to Render, every environment variable and PayPal app setup: [docs/deployment.md](docs/deployment.md).
 
 ## Tests
 
